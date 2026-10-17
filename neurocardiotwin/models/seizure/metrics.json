@@ -1,0 +1,10 @@
+{
+  "accuracy": 0.5082644628099173,
+  "precision": 0.22695035460992907,
+  "recall": 0.7619047619047619,
+  "f1": 0.34972677595628415,
+  "auroc": 0.6495238095238095,
+  "auprc": 0.27641923596447593,
+  "split": "cache-provided test split",
+  "warning": "Starter research run only; do not use clinically."
+}
