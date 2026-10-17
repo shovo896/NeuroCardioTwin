@@ -32,28 +32,30 @@ def csv_signal(raw:bytes,n:int):
     values=np.genfromtxt(io.BytesIO(raw),delimiter=',',dtype=np.float32);values=np.asarray(values).squeeze();values=values[np.isfinite(values)]
     if values.size<n:raise HTTPException(422,f'CSV needs at least {n} numeric samples')
     values=values[:n];return (values-values.mean())/(values.std()+1e-6)
+async def signal_request(request:Request,n:int,file_key:str):
+    if 'application/json' in request.headers.get('content-type',''):
+        body=await request.json(); values=np.asarray(body.get('signal_values',[]),dtype=np.float32).reshape(-1)
+        if values.size<n or not np.isfinite(values).all():raise HTTPException(422,f'Provide at least {n} finite numeric signal values.')
+        x=values[:n];x=(x-x.mean())/(x.std()+1e-6);return x,body
+    form=await request.form();file=form.get(file_key) or (form.getlist(file_key+'s')[0] if form.getlist(file_key+'s') else None)
+    if file is None:raise HTTPException(422,f'Submit a one-column CSV as {file_key}, or JSON signal_values.')
+    if not getattr(file,'filename','').lower().endswith('.csv'):raise HTTPException(415,'Only CSV is supported by this CPU starter server.')
+    return csv_signal(await file.read(),n),form
 @app.post('/api/analyze/seizure')
 async def seizure(request:Request):
     model=registry.get('seizure')
     if model is None:raise HTTPException(503,'Seizure checkpoint is unavailable. Run scripts/train_seizure.py first.')
-    form=await request.form();file=form.get('eeg_file') or (form.getlist('eeg_files')[0] if form.getlist('eeg_files') else None)
-    if file is None:raise HTTPException(422,'Submit a one-column EEG CSV as eeg_file. EDF parsing is not enabled in this CPU starter server.')
-    if not getattr(file,'filename','').lower().endswith('.csv'):raise HTTPException(415,'Only CSV is supported by this starter server.')
-    x=csv_signal(await file.read(),512);prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item())
-    return {'session_id':form.get('session_id') or 'local-upload','detected':prob>=.5,'probability':prob,'threshold':.5,'quality':'not assessed','research_only':True}
+    x,payload=await signal_request(request,512,'eeg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
+    if not .05<=threshold<=.95:raise HTTPException(422,'threshold must be between 0.05 and 0.95')
+    return {'session_id':payload.get('session_id') or 'local-upload','detected':prob>=threshold,'probability':prob,'threshold':threshold,'quality':'not assessed','research_only':True}
 @app.post('/api/analyze/arrhythmia')
 async def arrhythmia(request:Request):
     model=registry.get('arrhythmia')
     if model is None:raise HTTPException(503,'Arrhythmia checkpoint is unavailable. Run scripts/train_arrhythmia.py first.')
-    form=await request.form();file=form.get('ecg_file') or (form.getlist('ecg_files')[0] if form.getlist('ecg_files') else None)
-    if file is None:raise HTTPException(422,'Submit a one-column ECG CSV as ecg_file.')
-    if not getattr(file,'filename','').lower().endswith('.csv'):raise HTTPException(415,'Only CSV is supported by this starter server.')
-    x=csv_signal(await file.read(),180);prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item())
-    return {'session_id':form.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=.5 else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'research_only':True}
+    x,payload=await signal_request(request,180,'ecg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
+    return {'session_id':payload.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=threshold else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'research_only':True}
 @app.post('/api/analyze/forecast')
 async def forecast(): raise HTTPException(503,'Train and implement the forecasting serving path before use; no prediction is fabricated.')
-@app.post('/api/generate-signal')
-async def generate_signal(): raise HTTPException(501,'Text-to-signal generation has no validated model in this project. It remains disabled instead of producing a fabricated medical signal.')
 app.mount('/static',StaticFiles(directory=str(ROOT)),name='static')
 @app.get('/')
 def homepage(): return FileResponse(ROOT/'index.html')
