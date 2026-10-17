@@ -13,7 +13,10 @@ def windows(record):
         x=sig[at-90:at+90,0].astype('float32');x=(x-x.mean())/(x.std()+1e-6);rows.append((x,s not in NORMAL))
     return rows
 def main(epochs=12):
-    splits={'train':['100','101'],'val':['103'],'test':['105']}; data={}
+    extended={'train':['100','101','103','105','106','108','109'],'val':['112'],'test':['114','115']}; baseline={'train':['100','101'],'val':['103'],'test':['105']}
+    splits=extended if all((RAW/f'{r}.dat').exists() for rs in extended.values() for r in rs) else baseline
+    print('Using', 'extended' if splits is extended else 'four-record baseline', 'record-level split')
+    data={}
     for sp,rs in splits.items():
         rows=sum((windows(r) for r in rs),[]); x=np.array([a for a,_ in rows])[:,None,:];y=np.array([b for _,b in rows],dtype='float32');data[sp]=DataLoader(TensorDataset(torch.tensor(x),torch.tensor(y)),32,shuffle=sp=='train');print(sp,len(y),int(y.sum()))
     dev='cuda' if torch.cuda.is_available() else 'cpu';m=ArrhythmiaClassifier().to(dev);opt=torch.optim.AdamW(m.parameters(),2e-4);loss=torch.nn.BCEWithLogitsLoss();OUT.mkdir(parents=True,exist_ok=True);best=-1

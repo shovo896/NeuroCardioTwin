@@ -42,7 +42,14 @@ async def seizure(request:Request):
     x=csv_signal(await file.read(),512);prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item())
     return {'session_id':form.get('session_id') or 'local-upload','detected':prob>=.5,'probability':prob,'threshold':.5,'quality':'not assessed','research_only':True}
 @app.post('/api/analyze/arrhythmia')
-async def arrhythmia(): raise HTTPException(503,'Train and implement the arrhythmia serving path before use; no prediction is fabricated.')
+async def arrhythmia(request:Request):
+    model=registry.get('arrhythmia')
+    if model is None:raise HTTPException(503,'Arrhythmia checkpoint is unavailable. Run scripts/train_arrhythmia.py first.')
+    form=await request.form();file=form.get('ecg_file') or (form.getlist('ecg_files')[0] if form.getlist('ecg_files') else None)
+    if file is None:raise HTTPException(422,'Submit a one-column ECG CSV as ecg_file.')
+    if not getattr(file,'filename','').lower().endswith('.csv'):raise HTTPException(415,'Only CSV is supported by this starter server.')
+    x=csv_signal(await file.read(),180);prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item())
+    return {'session_id':form.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=.5 else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'research_only':True}
 @app.post('/api/analyze/forecast')
 async def forecast(): raise HTTPException(503,'Train and implement the forecasting serving path before use; no prediction is fabricated.')
 @app.post('/api/generate-signal')

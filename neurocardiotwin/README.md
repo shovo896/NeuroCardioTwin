@@ -4,7 +4,7 @@ A build-free HTML/CSS/JavaScript research dashboard for EEG/ECG workflows. It is
 
 ## CPU-first training pipeline
 
-This i5/16 GB RAM-compatible starter downloads about 50 MB: four MIT-BIH Arrhythmia records and three MIT-BIH Polysomnographic records with simultaneous ECG and EEG. It deliberately uses record-level train/validation/test splits, but the tiny subset is a runnable baseline—not a publishable or clinical validation.
+This i5/16 GB RAM-compatible starter downloads a bounded subset (ten MIT-BIH Arrhythmia records and six MIT-BIH Polysomnographic records with simultaneous ECG and EEG). Downloads resume from partial files. It deliberately uses record-level train/validation/test splits, but this remains a local research baseline—not a publishable or clinical validation.
 
 ```bash
 cd /Users/imac/DIU_compettion/neurocardiotwin

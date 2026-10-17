@@ -12,7 +12,7 @@ def pair(record,limit=180000):
     for i in range(0,sig.shape[1]-CTX-FUTURE,CTX): x.append(sig[:,i:i+CTX]);y.append(sig[:,i+CTX:i+CTX+FUTURE])
     return np.array(x),np.array(y)
 def main(epochs=12):
-    splits={'train':['slp01a'],'val':['slp02a'],'test':['slp03']};data={}
+    splits={'train':['slp01a','slp03','slp14'],'val':['slp02a'],'test':['slp04','slp16']};data={}
     for sp,rs in splits.items():
         a,b=zip(*(pair(r) for r in rs));x=np.concatenate(a);y=np.concatenate(b);data[sp]=DataLoader(TensorDataset(torch.tensor(x),torch.tensor(y)),16,shuffle=sp=='train');print(sp,x.shape)
     dev='cuda' if torch.cuda.is_available() else 'cpu';m=TwinForecaster(FUTURE).to(dev);opt=torch.optim.AdamW(m.parameters(),2e-4);loss=torch.nn.MSELoss();OUT.mkdir(parents=True,exist_ok=True);best=float('inf')
