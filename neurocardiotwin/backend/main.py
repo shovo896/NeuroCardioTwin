@@ -1,4 +1,4 @@
-"""Local-only FastAPI server for trained NeuroCardioTwin research checkpoints."""
+"""Local-only FastAPI server for the NeuroCardioTwin competition prototype."""
 from __future__ import annotations
 import io,json,sys
 from pathlib import Path
@@ -7,7 +7,7 @@ from fastapi import FastAPI,HTTPException,Request
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 ROOT=Path(__file__).resolve().parents[1];sys.path.insert(0,str(ROOT));from backend.models import SeizureClassifier,ArrhythmiaClassifier,TwinForecaster
-app=FastAPI(title='NeuroCardioTwin local research API'); DEVICE=torch.device('cpu'); registry={}
+app=FastAPI(title='NeuroCardioTwin Digital Twin API'); DEVICE=torch.device('cpu'); registry={}
 def checkpoint(task): return ROOT/'models'/task/'best_fp32.pth'
 def load(task):
     path=checkpoint(task)
@@ -19,7 +19,7 @@ def startup():
         try: registry[task]=load(task)
         except Exception: registry[task]=None
 @app.get('/api/health')
-def health(): return {'status':'ok','device':str(DEVICE),'research_only':True}
+def health(): return {'status':'ok','device':str(DEVICE),'system':'NeuroCardioTwin competition prototype'}
 @app.get('/api/models/status')
 def status(): return {k:{'loaded':v is not None,'checkpoint':str(checkpoint(k).relative_to(ROOT))} for k,v in registry.items()}
 @app.get('/api/metrics')
@@ -47,13 +47,13 @@ async def seizure(request:Request):
     if model is None:raise HTTPException(503,'Seizure checkpoint is unavailable. Run scripts/train_seizure.py first.')
     x,payload=await signal_request(request,512,'eeg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
     if not .05<=threshold<=.95:raise HTTPException(422,'threshold must be between 0.05 and 0.95')
-    return {'session_id':payload.get('session_id') or 'local-upload','detected':prob>=threshold,'probability':prob,'threshold':threshold,'quality':'not assessed','research_only':True}
+    return {'session_id':payload.get('session_id') or 'local-upload','detected':prob>=threshold,'probability':prob,'threshold':threshold,'quality':'not assessed','prototype':True}
 @app.post('/api/analyze/arrhythmia')
 async def arrhythmia(request:Request):
     model=registry.get('arrhythmia')
     if model is None:raise HTTPException(503,'Arrhythmia checkpoint is unavailable. Run scripts/train_arrhythmia.py first.')
     x,payload=await signal_request(request,180,'ecg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
-    return {'session_id':payload.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=threshold else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'research_only':True}
+    return {'session_id':payload.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=threshold else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'prototype':True}
 @app.post('/api/analyze/forecast')
 async def forecast(): raise HTTPException(503,'Train and implement the forecasting serving path before use; no prediction is fabricated.')
 app.mount('/static',StaticFiles(directory=str(ROOT)),name='static')
