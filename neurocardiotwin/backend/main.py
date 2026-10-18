@@ -55,7 +55,15 @@ async def arrhythmia(request:Request):
     x,payload=await signal_request(request,180,'ecg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
     return {'session_id':payload.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=threshold else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'prototype':True}
 @app.post('/api/analyze/forecast')
-async def forecast(): raise HTTPException(503,'Train and implement the forecasting serving path before use; no prediction is fabricated.')
+async def forecast(request:Request):
+    model=registry.get('forecast')
+    if model is None:raise HTTPException(503,'Forecast checkpoint is unavailable. Run scripts/train_forecast.py first.')
+    if 'application/json' not in request.headers.get('content-type',''):raise HTTPException(415,'Submit JSON with ecg_values and eeg_values.')
+    body=await request.json(); ecg=np.asarray(body.get('ecg_values',[]),dtype=np.float32).reshape(-1); eeg=np.asarray(body.get('eeg_values',[]),dtype=np.float32).reshape(-1)
+    if ecg.size<256 or eeg.size<256 or not np.isfinite(ecg).all() or not np.isfinite(eeg).all():raise HTTPException(422,'Provide at least 256 finite ECG and EEG values.')
+    x=np.stack((ecg[:256],eeg[:256]));x=(x-x.mean(1,keepdims=True))/(x.std(1,keepdims=True)+1e-6)
+    with torch.inference_mode():pred,quality=model(torch.tensor(x)[None])
+    return {'session_id':body.get('session_id') or 'local-forecast','forecast_horizon':64,'predicted_ecg':pred[0,0].tolist(),'predicted_eeg':pred[0,1].tolist(),'signal_reliability':quality[0].tolist(),'prototype':True}
 app.mount('/static',StaticFiles(directory=str(ROOT)),name='static')
 @app.get('/')
 def homepage(): return FileResponse(ROOT/'index.html')
