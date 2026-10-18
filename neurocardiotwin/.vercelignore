@@ -1,0 +1,9 @@
+.venv
+data/mitdb
+data/slpdb
+data/processed
+scripts
+notebook982510d391 (1).ipynb
+*.ipynb
+*.part
+README.md
