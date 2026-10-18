@@ -44,7 +44,7 @@ async def arrhythmia(request:Request):
 @app.post('/api/analyze/forecast')
 async def forecast(request:Request):
     if sessions.get('forecast') is None:raise HTTPException(503,'Forecast model unavailable')
-    b=await request.json();x=np.stack((norm(b.get('ecg_values',[]),256),norm(b.get('eeg_values',[]),256)));p=run('forecast',x[None])[0];return {'session_id':b.get('session_id','local'),'forecast_horizon':64,'predicted_ecg':p[0,0].tolist(),'predicted_eeg':p[0,1].tolist(),'prototype':True}
+    b=await request.json();x=np.stack((norm(b.get('ecg_values',[]),256),norm(b.get('eeg_values',[]),256)));p=run('forecast',x[None]);return {'session_id':b.get('session_id','local'),'forecast_horizon':64,'predicted_ecg':p[0,0].tolist(),'predicted_eeg':p[0,1].tolist(),'prototype':True}
 @app.get('/')
 def home():return FileResponse(ROOT/'index.html')
 app.mount('/',StaticFiles(directory=str(ROOT),html=True),name='static')
