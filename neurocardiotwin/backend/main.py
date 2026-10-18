@@ -36,6 +36,7 @@ def csv_signal(raw:bytes,n:int):
     values=np.genfromtxt(io.BytesIO(raw),delimiter=',',dtype=np.float32);values=np.asarray(values).squeeze();values=values[np.isfinite(values)]
     if values.size<n:raise HTTPException(422,f'CSV needs at least {n} numeric samples')
     values=values[:n];return (values-values.mean())/(values.std()+1e-6)
+def input_quality(x): return {'status':'Validated','valid_samples':int(np.asarray(x).size),'finite_ratio':float(np.isfinite(x).mean())}
 async def signal_request(request:Request,n:int,file_key:str):
     if 'application/json' in request.headers.get('content-type',''):
         body=await request.json(); values=np.asarray(body.get('signal_values',[]),dtype=np.float32).reshape(-1)
@@ -51,13 +52,13 @@ async def seizure(request:Request):
     if model is None:raise HTTPException(503,'Seizure checkpoint is unavailable. Run scripts/train_seizure.py first.')
     x,payload=await signal_request(request,512,'eeg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
     if not .05<=threshold<=.95:raise HTTPException(422,'threshold must be between 0.05 and 0.95')
-    return {'session_id':payload.get('session_id') or 'local-upload','detected':prob>=threshold,'probability':prob,'threshold':threshold,'quality':'not assessed','prototype':True}
+    return {'session_id':payload.get('session_id') or 'local-upload','detected':prob>=threshold,'probability':prob,'threshold':threshold,'input_quality':input_quality(x),'prototype':True}
 @app.post('/api/analyze/arrhythmia')
 async def arrhythmia(request:Request):
     model=registry.get('arrhythmia')
     if model is None:raise HTTPException(503,'Arrhythmia checkpoint is unavailable. Run scripts/train_arrhythmia.py first.')
     x,payload=await signal_request(request,180,'ecg_file');prob=float(torch.sigmoid(model(torch.tensor(x)[None,None])).item());threshold=float(payload.get('threshold',.5))
-    return {'session_id':payload.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=threshold else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'prototype':True}
+    return {'session_id':payload.get('session_id') or 'local-upload','classification':'Abnormal beat' if prob>=threshold else 'Normal beat','confidence':max(prob,1-prob),'abnormal_probability':prob,'markers':[],'input_quality':input_quality(x),'prototype':True}
 @app.post('/api/analyze/forecast')
 async def forecast(request:Request):
     model=registry.get('forecast')
@@ -67,7 +68,7 @@ async def forecast(request:Request):
     if ecg.size<256 or eeg.size<256 or not np.isfinite(ecg).all() or not np.isfinite(eeg).all():raise HTTPException(422,'Provide at least 256 finite ECG and EEG values.')
     x=np.stack((ecg[:256],eeg[:256]));x=(x-x.mean(1,keepdims=True))/(x.std(1,keepdims=True)+1e-6)
     with torch.inference_mode():pred,quality=model(torch.tensor(x)[None])
-    return {'session_id':body.get('session_id') or 'local-forecast','forecast_horizon':64,'predicted_ecg':pred[0,0].tolist(),'predicted_eeg':pred[0,1].tolist(),'signal_reliability':quality[0].tolist(),'prototype':True}
+    return {'session_id':body.get('session_id') or 'local-forecast','forecast_horizon':64,'predicted_ecg':pred[0,0].tolist(),'predicted_eeg':pred[0,1].tolist(),'signal_reliability':quality[0].tolist(),'input_quality':input_quality(x),'prototype':True}
 app.mount('/static',StaticFiles(directory=str(ROOT)),name='static')
 @app.get('/')
 def homepage(): return FileResponse(ROOT/'index.html')
