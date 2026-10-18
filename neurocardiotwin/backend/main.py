@@ -22,6 +22,10 @@ def startup():
 def health(): return {'status':'ok','device':str(DEVICE),'system':'NeuroCardioTwin competition prototype'}
 @app.get('/api/models/status')
 def status(): return {k:{'loaded':v is not None,'checkpoint':str(checkpoint(k).relative_to(ROOT))} for k,v in registry.items()}
+@app.get('/api/capabilities')
+def capabilities():
+    ready=registry.get('forecast') is not None
+    return {'forecast':{'available':ready,'input_samples':{'ecg':256,'eeg':256},'horizons':[64] if ready else []}}
 @app.get('/api/metrics')
 def metrics():
     out={}

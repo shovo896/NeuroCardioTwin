@@ -15,6 +15,10 @@ def setup():start()
 def health():return {'status':'ok','runtime':'onnx-cpu','system':'NeuroCardioTwin'}
 @app.get('/api/models/status')
 def status():return {n:{'loaded':m is not None} for n,m in sessions.items()}
+@app.get('/api/capabilities')
+def capabilities():
+    ready=sessions.get('forecast') is not None
+    return {'forecast':{'available':ready,'input_samples':{'ecg':256,'eeg':256},'horizons':[64] if ready else []}}
 @app.get('/api/metrics')
 def metrics():
     return {n:json.loads(p.read_text()) if (p:=ROOT/'models'/n/'metrics.json').exists() else {} for n in sessions}
