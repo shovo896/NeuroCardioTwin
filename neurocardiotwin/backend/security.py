@@ -21,6 +21,7 @@ from fastapi import HTTPException, Request
 
 
 MCP_SCOPES = ("mcp:read", "knowledge:query", "twin:read", "admin:read")
+DEFAULT_USER_PERMISSION_CLAIM = "https://neurocardiotwin.app/permissions"
 _JWKS_CACHE: dict[str, tuple[float, dict[str, Any]]] = {}
 
 
@@ -121,6 +122,13 @@ def verify_bearer(request: Request, required_scope: str = "mcp:read") -> Identit
         scope_claim = claims.get("scope", "")
         if isinstance(scope_claim, str):
             permissions = permissions.union(scope_claim.split())
+        # A Post-Login Action issues this namespaced claim for the public
+        # standard-user tier. The JWT signature has already been verified.
+        default_permissions = claims.get(DEFAULT_USER_PERMISSION_CLAIM, [])
+        if isinstance(default_permissions, str):
+            default_permissions = default_permissions.split()
+        if isinstance(default_permissions, list) and all(isinstance(item, str) for item in default_permissions):
+            permissions = permissions.union(default_permissions)
         if required_scope not in permissions:
             raise PermissionError("Required permission is missing.")
         subject = claims.get("sub")
