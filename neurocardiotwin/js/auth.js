@@ -121,5 +121,7 @@
     const topButton = button(); if (topButton) topButton.addEventListener('click', () => authenticate(topButton));
     const signInButton = gateButton(); if (signInButton) signInButton.addEventListener('click', () => authenticate(signInButton));
   }
-  document.addEventListener('DOMContentLoaded', boot);
+  // auth.js is loaded after the gate markup, so boot immediately. This also
+  // avoids a stale/bfcache document missing the DOMContentLoaded event.
+  boot();
 })();
