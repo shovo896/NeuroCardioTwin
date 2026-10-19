@@ -7,6 +7,14 @@ sends a signal, an email address, an Auth0 subject or a token to providers.
 from __future__ import annotations
 
 import argparse
+import sys
+from pathlib import Path
+
+# Permit ``python scripts/check_ai_decision_support.py`` from the project root
+# without requiring callers to modify PYTHONPATH.
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+if str(PROJECT_ROOT) not in sys.path:
+    sys.path.insert(0, str(PROJECT_ROOT))
 
 from backend.decision_support import DecisionConfig, RAGDecisionService, compact_analysis
 
