@@ -31,14 +31,25 @@ def auth_config():
     return {'domain':domain,'client_id':client_id,'audience':audience}
 @app.get('/api/me')
 def current_user(request:Request):
-    """Verify a user token, then persist and return that user's own profile only."""
+    """Verify a user token and return only that user's profile.
+
+    Auth0 is the access-control boundary.  Supabase records are useful for
+    audit and organisation metadata, but a transient storage/schema problem
+    must not turn a successfully verified sign-in into a failed sign-in.
+    """
     identity=verify_bearer(request,'mcp:read')
+    profile={'email':identity.email,'display_name':identity.name}
+    memberships=[]
     try:
-        profile=store.upsert_profile(identity)
+        saved_profile=store.upsert_profile(identity)
+        if saved_profile:
+            profile=saved_profile
         memberships=store.memberships(profile.get('id'))
         store.audit(identity,'profile.session_verified',{'surface':'web'})
-    except RuntimeError as exc:
-        raise HTTPException(503,str(exc)) from exc
+    except RuntimeError:
+        # Keep the workspace available to an authenticated user; persistence
+        # will be retried on the next authenticated request.
+        pass
     return {'subject':identity.subject,'email':profile.get('email'),'display_name':profile.get('display_name'),'memberships':memberships}
 def require_workspace_access(request:Request):
     """Every workspace/model endpoint requires the same verified MCP user token."""
