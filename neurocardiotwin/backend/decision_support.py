@@ -273,3 +273,61 @@ class RAGDecisionService:
             LOGGER.warning("Chat generation unavailable; using retrieval-guided decision (%s).", type(exc).__name__)
             content = self._retrieval_guided_decision(summary, sources)
         return {"decision": content.strip()[:2400], "sources": sources, "safety_notice": SAFETY_NOTICE, "prototype": True}
+
+    @staticmethod
+    def _chat_fallback(language: str, sources: list[dict[str, str]]) -> str:
+        citations = " ".join(f"[{source['title']}]" for source in sources[:2])
+        if language == "bn":
+            return (
+                "আমি অনুমোদিত গবেষণা-জ্ঞানভিত্তিক সহকারী। মডেলের ফলাফল ব্যাখ্যা, "
+                "signal validation, বা গবেষণার পরের ধাপ সম্পর্কে প্রশ্ন করতে পারেন। "
+                f"এটি চিকিৎসা নির্ণয় বা চিকিৎসা পরামর্শ নয়। {citations}"
+            )
+        return (
+            "I can help explain model outputs, signal validation, and research workflow "
+            "from the approved knowledge base. This is not a diagnosis or medical advice. "
+            f"{citations}"
+        )
+
+    def chat(self, message: Any, language: Any = "en") -> dict[str, Any]:
+        """Answer a short authenticated workspace question using approved RAG data.
+
+        Conversations are intentionally not persisted.  The request never adds
+        profile fields, raw signal arrays, uploads, or history to the prompt.
+        """
+        if not isinstance(message, str) or not (question := message.strip()):
+            raise HTTPException(422, "Enter a question for the assistant.")
+        if len(question) > 800:
+            raise HTTPException(422, "Keep the question under 800 characters.")
+        selected_language = "bn" if str(language).lower() in {"bn", "bangla", "bengali"} else "en"
+        try:
+            embedding_hf, chat_hf, index = self._clients()
+            sources = self._retrieve(embedding_hf, index, question)
+        except Exception as exc:
+            LOGGER.warning("Chat retrieval unavailable; using local approved knowledge (%s).", type(exc).__name__)
+            sources = _local_sources()
+            return {"answer": self._chat_fallback(selected_language, sources), "sources": sources, "language": selected_language, "prototype": True}
+
+        evidence = "\n\n".join(f"[{source['title']}]\n{source['excerpt']}" for source in sources)
+        language_instruction = "Reply in clear Bangla." if selected_language == "bn" else "Reply in clear English."
+        system = (
+            "You are NeuroCardioTwin's research assistant. Use only the approved evidence supplied. "
+            "Do not diagnose, triage, prescribe, interpret an individual waveform, or claim clinical certainty. "
+            "Keep the answer concise, research-oriented, and cite the supplied source titles in brackets. "
+            + language_instruction
+        )
+        try:
+            completion = chat_hf.chat_completion(
+                model=self.config.hf_chat_model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": question}, {"role": "user", "content": f"APPROVED EVIDENCE:\n{evidence}"}],
+                max_tokens=280,
+                temperature=0.2,
+            )
+            choices = getattr(completion, "choices", None)
+            answer = getattr(getattr(choices[0], "message", None), "content", None) if choices else None
+            if not isinstance(answer, str) or not answer.strip():
+                raise RuntimeError("Hugging Face returned an empty chat response.")
+        except Exception as exc:
+            LOGGER.warning("Chat generation unavailable; using approved-knowledge reply (%s).", type(exc).__name__)
+            answer = self._chat_fallback(selected_language, sources)
+        return {"answer": answer.strip()[:2400], "sources": sources, "language": selected_language, "prototype": True}

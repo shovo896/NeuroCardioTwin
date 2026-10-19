@@ -21,6 +21,7 @@ window.API = {
   analyze(kind, data) { return this.request(`/api/analyze/${kind}`, { method: 'POST', body: data }); },
   analyzeParameters(kind, payload) { return this.json(`/api/analyze/${kind}`, payload); },
   decision(analysisType, modelResult) { return this.json('/api/decision', { analysis_type: analysisType, model_result: modelResult }); },
+  chat(message, language) { return this.json('/api/chat', { message, language }); },
   decisionStatus() { return this.request('/api/decision/status'); },
   reindexKnowledge() { return this.json('/api/knowledge/reindex', {}); },
   history(limit = 20) { return this.request(`/api/history?limit=${encodeURIComponent(limit)}`); },

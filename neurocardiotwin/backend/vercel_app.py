@@ -163,6 +163,21 @@ async def decision(request:Request):
         raise HTTPException(422,'Provide analysis_type and a model_result object.')
     return await integrated_decision(identity,str(body.get('analysis_type','')),body['model_result'])
 
+@app.post('/api/chat')
+async def workspace_chat(request:Request):
+    """Private RAG chat; messages are processed transiently and never stored."""
+    identity=require_workspace_access(request)
+    try:
+        body=await request.json()
+    except Exception as exc:
+        raise HTTPException(422,'Provide a JSON chat request.') from exc
+    if not isinstance(body,dict):
+        raise HTTPException(422,'Provide a chat message.')
+    result=await run_in_threadpool(RAGDecisionService().chat,body.get('message'),body.get('language','en'))
+    try: store.audit(identity,'assistant.chat',{'language':result['language']})
+    except RuntimeError: pass
+    return result
+
 @app.get('/api/history')
 def private_history(request:Request,limit:int=20):
     identity=require_workspace_access(request)
