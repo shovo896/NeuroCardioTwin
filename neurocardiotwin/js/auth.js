@@ -58,7 +58,7 @@
     sessionStorage.setItem(VERIFIER_KEY, verifier); sessionStorage.setItem(STATE_KEY, state);
     const query = new URLSearchParams({
       response_type: 'code', client_id: oauth.client_id, redirect_uri: redirectUri,
-      scope: 'openid profile email mcp:read twin:read knowledge:query', audience: oauth.audience,
+      scope: 'openid profile email mcp:read', audience: oauth.audience,
       code_challenge: encode(digest), code_challenge_method: 'S256', state
     });
     window.location.assign(`https://${oauth.domain}/authorize?${query}`);
