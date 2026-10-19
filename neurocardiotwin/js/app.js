@@ -1,5 +1,5 @@
 window.App = (() => {
-  let eeg = [], ecg = [];
+  let eeg = [], ecg = [], activeProfile = null, pendingAvatarData;
   const repeat = (values, n) => Array.from({ length: n }, (_, i) => values[i % values.length]);
   const $ = id => document.getElementById(id);
   const value = x => typeof x === 'number' ? x.toFixed(3) : x ?? '—';
@@ -7,13 +7,78 @@ window.App = (() => {
   const set = (selector, text) => { const element = document.querySelector(selector); if (element) element.textContent = text; };
   const modelRate = quality => quality?.source_sampling_rate_hz ? `${quality.source_sampling_rate_hz} Hz source → ${quality.model_sampling_rate_hz} Hz model input` : '128 Hz model input';
 
+  function renderAvatar(profile, name) {
+    const avatar = $('profile-avatar');
+    if (!avatar) return;
+    avatar.replaceChildren();
+    if (profile?.avatar_data) {
+      const image = new Image(); image.alt = `${name}'s profile photo`; image.src = profile.avatar_data;
+      avatar.append(image);
+      return;
+    }
+    avatar.textContent = name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NC';
+  }
   function renderProfile(profile) {
+    activeProfile = profile || activeProfile;
     const name = profile?.display_name || profile?.email?.split('@')[0] || 'NeuroCardioTwin user';
     const email = profile?.email || 'Verified account';
-    const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NC';
     set('#profile-name', name); set('#profile-email', email);
-    set('#profile-display-name', name); set('#profile-email-detail', email);
-    set('#profile-avatar', initials);
+    const nameInput = $('profile-display-name'), emailInput = $('profile-contact-email');
+    if (nameInput) nameInput.value = name;
+    if (emailInput) emailInput.value = profile?.contact_email || email;
+    set('#profile-email-detail', email);
+    renderAvatar(profile, name);
+  }
+
+  function setProfileMessage(message = '', error = false) {
+    const element = $('profile-form-message'); if (!element) return;
+    element.textContent = message; element.classList.toggle('error', error);
+  }
+  async function compressProfilePhoto(file) {
+    if (!file || !['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) throw Error('Choose a PNG, JPEG, or WebP image.');
+    if (file.size > 5_000_000) throw Error('Choose an image smaller than 5 MB.');
+    const source = await new Promise((resolve, reject) => {
+      const image = new Image(), url = URL.createObjectURL(file);
+      image.onload = () => { URL.revokeObjectURL(url); resolve(image); };
+      image.onerror = () => { URL.revokeObjectURL(url); reject(Error('This image could not be read.')); };
+      image.src = url;
+    });
+    const scale = Math.min(1, 320 / Math.max(source.width, source.height));
+    const canvas = document.createElement('canvas'); canvas.width = Math.max(1, Math.round(source.width * scale)); canvas.height = Math.max(1, Math.round(source.height * scale));
+    canvas.getContext('2d').drawImage(source, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', .82));
+    if (!blob || blob.size > 300_000) throw Error('Choose a simpler image; the saved profile photo must be 300 KB or smaller.');
+    return new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = () => reject(Error('This image could not be read.')); reader.readAsDataURL(blob); });
+  }
+  function bindProfileControls() {
+    const form = $('profile-form');
+    if (!form || form.dataset.bound) return;
+    form.dataset.bound = 'true';
+    $('profile-avatar-input')?.addEventListener('change', async event => {
+      const file = event.target.files?.[0]; if (!file) return;
+      try {
+        setProfileMessage('Preparing photo…'); pendingAvatarData = await compressProfilePhoto(file);
+        renderAvatar({ ...activeProfile, avatar_data: pendingAvatarData }, $('profile-display-name')?.value || 'NeuroCardioTwin user');
+        setProfileMessage('Photo ready. Select Save profile to keep it private.');
+      } catch (error) { event.target.value = ''; setProfileMessage(error.message, true); }
+    });
+    $('profile-remove-photo')?.addEventListener('click', () => {
+      pendingAvatarData = null; $('profile-avatar-input').value = '';
+      renderAvatar({ ...activeProfile, avatar_data: null }, $('profile-display-name')?.value || 'NeuroCardioTwin user');
+      setProfileMessage('Photo will be removed when you save your profile.');
+    });
+    form.addEventListener('submit', async event => {
+      event.preventDefault();
+      const submit = form.querySelector('[type="submit"]'); submit.disabled = true; setProfileMessage('Saving your private profile…');
+      const payload = { display_name: $('profile-display-name').value, contact_email: $('profile-contact-email').value };
+      if (pendingAvatarData !== undefined) payload.avatar_data = pendingAvatarData;
+      try {
+        const profile = await API.updateProfile(payload); pendingAvatarData = undefined; renderProfile(profile);
+        setProfileMessage('Profile saved securely.');
+      } catch (error) { setProfileMessage(error.message || 'Profile could not be saved.', true); }
+      finally { submit.disabled = false; }
+    });
+    $('profile-load-history')?.addEventListener('click', () => loadPrivateHistory(50));
   }
 
   function presentationCopy() {
@@ -117,12 +182,12 @@ window.App = (() => {
     const label = item.analysis_type === 'seizure' ? (summary.detected ? 'Pattern flagged' : 'No pattern flagged') : item.analysis_type === 'arrhythmia' ? (summary.classification || 'Model result') : 'Forecast prepared';
     return `<div><strong>${escapeHtml(item.analysis_type || 'Analysis')} · ${escapeHtml(label)}</strong><span>${escapeHtml(item.session_label || 'session')} · ${escapeHtml(date)}</span></div>`;
   }
-  async function loadPrivateHistory() {
+  async function loadPrivateHistory(limit = 8) {
     const panel = ensurePrivateHistoryPanel(); if (!panel) return;
     const body = $('private-history-body');
     if (!body) return;
     try {
-      const response = await API.history(8);
+      const response = await API.history(limit);
       set('#profile-history-count', String(response.items?.length || 0));
       if (!response.items?.length) {
         set('#profile-latest', 'No analysis yet');
@@ -133,6 +198,7 @@ window.App = (() => {
       const newest = response.items[0];
       set('#profile-latest', newest.analysis_type ? `${newest.analysis_type[0].toUpperCase()}${newest.analysis_type.slice(1)} analysis` : 'Recent analysis');
       body.className = 'session-list'; body.innerHTML = response.items.map(historyRow).join('');
+      const more = $('profile-load-history'); if (more) { more.disabled = limit >= 50; more.innerHTML = limit >= 50 ? '<i class="fa-solid fa-check"></i> Showing available history' : 'View previous history <i class="fa-solid fa-arrow-right"></i>'; }
     } catch {
       body.className = 'empty-state';
       body.innerHTML = '<i class="fa-solid fa-lock"></i><p>Private history is unavailable until its server migration is enabled.</p>';
@@ -154,7 +220,7 @@ window.App = (() => {
   }
   async function init(event) {
     Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindIntegratedDecisionSurfaces();
-    renderProfile(event?.detail);
+    renderProfile(event?.detail); bindProfileControls();
     await Promise.all([loadDecisionStatus(), loadPrivateHistory()]);
     try {
       const response = await fetch('data/demo-signals.json'); if (!response.ok) throw Error();
