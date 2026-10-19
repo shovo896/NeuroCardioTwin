@@ -6,6 +6,8 @@ from fastapi import FastAPI,HTTPException,Request
 from fastapi.responses import FileResponse,JSONResponse
 from fastapi.staticfiles import StaticFiles
 from backend.security import MCP_SCOPES, auth0_ready, mcp_resource, mcp_unauthorized_headers, store, verify_bearer
+from backend.decision_support import DecisionConfig, RAGDecisionService, compact_analysis
+from starlette.concurrency import run_in_threadpool
 ROOT=Path(__file__).resolve().parents[1];app=FastAPI(title='NeuroCardioTwin');sessions={}
 def start():
     for n in ('seizure','arrhythmia','forecast'):
@@ -58,6 +60,72 @@ def current_user(request:Request):
 def require_workspace_access(request:Request):
     """Every workspace/model endpoint requires the same verified MCP user token."""
     return verify_bearer(request,'mcp:read')
+
+@app.get('/api/decision/status')
+def decision_status(request:Request):
+    require_workspace_access(request)
+    config=DecisionConfig.from_environment()
+    return {
+        'available':config.ready,
+        'history_configured':store.configured,
+        'privacy':'Only compact local-model summaries are eligible for AI decision support; raw waveforms are excluded.'
+    }
+
+@app.post('/api/knowledge/reindex')
+async def reindex_knowledge(request:Request):
+    """Admin-only, deliberate knowledge ingestion; it never indexes user data."""
+    identity=verify_bearer(request,'admin:read')
+    try:
+        result=await run_in_threadpool(RAGDecisionService().reindex)
+        store.audit(identity,'knowledge.reindexed',{'documents':result['indexed_documents']})
+        return result
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503,'Knowledge indexing is unavailable. Check server-only AI configuration.') from exc
+
+@app.post('/api/decision')
+async def decision(request:Request):
+    """Generate research-only RAG context from a whitelisted local-model summary."""
+    identity=require_workspace_access(request)
+    try:
+        body=await request.json()
+    except Exception as exc:
+        raise HTTPException(422,'Provide a JSON decision request.') from exc
+    if not isinstance(body,dict) or not isinstance(body.get('model_result'),dict):
+        raise HTTPException(422,'Provide analysis_type and a model_result object.')
+    summary=compact_analysis(str(body.get('analysis_type','')),body['model_result'])
+    try:
+        result=await run_in_threadpool(RAGDecisionService().decide,summary)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        raise HTTPException(503,'AI decision support is temporarily unavailable. Verify the server-only provider configuration and knowledge index.') from exc
+    persisted=False
+    try:
+        store.save_private_history(
+            identity,
+            summary['analysis_type'],
+            summary['session_id'],
+            summary,
+            result['decision'],
+            [source['title'] for source in result['sources']],
+        )
+        store.audit(identity,'decision.generated',{'analysis_type':summary['analysis_type']})
+        persisted=True
+    except RuntimeError:
+        # The response is still useful when Supabase is momentarily offline;
+        # silently avoid turning a provider result into a data-loss claim.
+        pass
+    return {**result,'history_persisted':persisted}
+
+@app.get('/api/history')
+def private_history(request:Request,limit:int=20):
+    identity=require_workspace_access(request)
+    try:
+        return {'items':store.private_history(identity,limit)}
+    except RuntimeError as exc:
+        raise HTTPException(503,'Private history is not configured. Apply the supplied Supabase migration.') from exc
 
 @app.get('/api/models/status')
 def status(request:Request):
