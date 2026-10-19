@@ -44,6 +44,11 @@ class DecisionConfig:
         chat_model = os.getenv("HF_CHAT_MODEL", "Qwen/Qwen2.5-7B-Instruct").strip() or "Qwen/Qwen2.5-7B-Instruct"
         if chat_model.endswith(":fastest"):
             chat_model = chat_model.removesuffix(":fastest")
+        # Gemma requires a separately accepted gated-model licence.  A fresh
+        # provider token commonly has no such grant, which must not disable
+        # the RAG path.  Qwen is provider-routable without that extra gate.
+        if chat_model.lower().startswith("google/gemma"):
+            chat_model = "Qwen/Qwen2.5-7B-Instruct"
         return cls(
             hf_token=os.getenv("HF_INFERENCE_TOKEN", "").strip(),
             pinecone_key=os.getenv("PINECONE_API_KEY", "").strip(),
@@ -136,13 +141,17 @@ class RAGDecisionService:
     def ready(self) -> bool:
         return self.config.ready
 
-    def _clients(self) -> tuple[InferenceClient, Any]:
+    def _clients(self) -> tuple[InferenceClient, InferenceClient, Any]:
         if not self.ready:
             raise HTTPException(503, "AI decision support is not configured.")
         # Provider selection remains automatic: it permits a conversational
         # provider for chat while selecting a feature-extraction provider for
         # the embedding model.  No provider credentials reach the browser.
-        hf = InferenceClient(api_key=self.config.hf_token)
+        # BGE is available from the first-party HF inference provider.  Pin
+        # embeddings to it rather than relying on an automatic provider that
+        # may only offer conversational models at request time.
+        embedding_hf = InferenceClient(api_key=self.config.hf_token, provider="hf-inference", timeout=25)
+        chat_hf = InferenceClient(api_key=self.config.hf_token, timeout=25)
         client = Pinecone(api_key=self.config.pinecone_key)
         host = self.config.pinecone_host
         # Pinecone's console shows both an index name and a data-plane host.
@@ -154,20 +163,20 @@ class RAGDecisionService:
         if not isinstance(host, str) or not host:
             raise RuntimeError("Pinecone index host could not be resolved.")
         index = client.Index(host=host)
-        return hf, index
+        return embedding_hf, chat_hf, index
 
     def _embed(self, hf: InferenceClient, text: str) -> list[float]:
         return _as_vector(hf.feature_extraction(text, model=self.config.hf_embedding_model))
 
     def reindex(self) -> dict[str, Any]:
         """Index the reviewed project knowledge.  This is admin-only at the route."""
-        hf, index = self._clients()
+        embedding_hf, _, index = self._clients()
         docs = _source_documents()
         vectors = []
         for doc in docs:
             vectors.append({
                 "id": doc["id"],
-                "values": self._embed(hf, doc["text"]),
+                "values": self._embed(embedding_hf, doc["text"]),
                 "metadata": {"title": doc["title"], "text": doc["text"][:3500], "source_id": doc["id"]},
             })
         index.upsert(vectors=vectors, namespace=self.config.namespace)
@@ -214,15 +223,15 @@ class RAGDecisionService:
             "Return only research workflow context and safe next validation steps."
         )
         try:
-            hf, index = self._clients()
-            sources = self._retrieve(hf, index, query)
+            embedding_hf, chat_hf, index = self._clients()
+            sources = self._retrieve(embedding_hf, index, query)
         except RuntimeError as exc:
             if "No approved knowledge was retrieved" in str(exc):
                 try:
                     # First-use bootstrap: only reviewed local knowledge is
                     # upserted; no user data or waveform is ever indexed.
                     self.reindex()
-                    sources = self._retrieve(hf, index, query)
+                    sources = self._retrieve(embedding_hf, index, query)
                 except Exception as retry_exc:
                     LOGGER.warning("RAG bootstrap unavailable; using local approved knowledge (%s).", type(retry_exc).__name__)
                     sources = _local_sources()
@@ -247,7 +256,7 @@ class RAGDecisionService:
         )
         user = f"MODEL SUMMARY (no raw signal):\n{summary}\n\nAPPROVED EVIDENCE:\n{evidence}"
         try:
-            completion = hf.chat_completion(
+            completion = chat_hf.chat_completion(
                 model=self.config.hf_chat_model,
                 messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
                 max_tokens=260,
