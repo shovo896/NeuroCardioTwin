@@ -181,6 +181,17 @@ class SupabaseStore:
         result = self._request("GET", "profiles", query=f"?auth0_subject=eq.{urllib.parse.quote(subject, safe='')}&select=*")
         return result[0] if isinstance(result, list) and result else None
 
+    def memberships(self, profile_id: str | None) -> list[dict[str, Any]]:
+        """Return only the caller's organization names and roles, never secrets."""
+        if not profile_id:
+            return []
+        query = (
+            f"?profile_id=eq.{urllib.parse.quote(profile_id, safe='')}"
+            "&select=role,organization:organizations(name,slug)"
+        )
+        result = self._request("GET", "organization_memberships", query=query)
+        return result if isinstance(result, list) else []
+
     def audit(self, identity: Identity, event_type: str, metadata: dict[str, Any] | None = None) -> None:
         profile = self.profile(identity.subject)
         self._request(

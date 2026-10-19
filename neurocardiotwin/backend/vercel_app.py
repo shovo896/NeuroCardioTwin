@@ -17,6 +17,27 @@ def health():return {'status':'ok','runtime':'onnx-cpu','system':'NeuroCardioTwi
 @app.get('/api/security/status')
 def security_status():
     return {'supabase':{'configured':store.configured},'auth0':{'configured':auth0_ready()},'mcp':{'enabled':store.configured and auth0_ready()}}
+@app.get('/api/auth/config')
+def auth_config():
+    """Public OAuth values for the browser PKCE flow; no credential is returned."""
+    import os
+    domain=os.getenv('AUTH0_DOMAIN','').strip().removeprefix('https://').rstrip('/')
+    client_id=os.getenv('AUTH0_CLIENT_ID','').strip()
+    audience=mcp_resource()
+    if not domain or not client_id or not audience:
+        raise HTTPException(503,'Browser authentication is not configured.')
+    return {'domain':domain,'client_id':client_id,'audience':audience}
+@app.get('/api/me')
+def current_user(request:Request):
+    """Verify a user token, then persist and return that user's own profile only."""
+    identity=verify_bearer(request,'mcp:read')
+    try:
+        profile=store.upsert_profile(identity)
+        memberships=store.memberships(profile.get('id'))
+        store.audit(identity,'profile.session_verified',{'surface':'web'})
+    except RuntimeError as exc:
+        raise HTTPException(503,str(exc)) from exc
+    return {'subject':identity.subject,'email':profile.get('email'),'display_name':profile.get('display_name'),'memberships':memberships}
 @app.get('/api/models/status')
 def status():return {n:{'loaded':m is not None} for n,m in sessions.items()}
 @app.get('/api/capabilities')
