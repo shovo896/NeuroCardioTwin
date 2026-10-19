@@ -53,7 +53,7 @@ code and add the SPA client ID as the `NCT_WEB_CLIENT_ID` Action secret:
 
 ```js
 exports.onExecutePostLogin = async (event, api) => {
-  if (event.client.client_id === event.secrets.NCT_WEB_CLIENT_ID) {
+  if (event.client.client_id === event.secrets.NCT_WEB_CLIENT_ID && event.user.email_verified) {
     api.accessToken.setCustomClaim(
       'https://neurocardiotwin.app/permissions', ['mcp:read']
     );
@@ -62,5 +62,5 @@ exports.onExecutePostLogin = async (event, api) => {
 ```
 
 The API accepts this only after Auth0 JWT signature, issuer, audience, and
-expiry validation. It grants standard MCP access only; admin permissions remain
-role-only.
+expiry validation. Only verified-email users receive standard MCP access; admin
+permissions remain role-only.
