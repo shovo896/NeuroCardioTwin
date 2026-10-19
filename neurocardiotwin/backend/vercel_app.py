@@ -13,7 +13,9 @@ def start():
 @app.on_event('startup')
 def setup():start()
 @app.get('/api/health')
-def health():return {'status':'ok','runtime':'onnx-cpu','system':'NeuroCardioTwin'}
+def health(request:Request):
+    verify_bearer(request,'mcp:read')
+    return {'status':'ok','runtime':'onnx-cpu','system':'NeuroCardioTwin'}
 @app.get('/api/security/status')
 def security_status():
     return {'supabase':{'configured':store.configured},'auth0':{'configured':auth0_ready()},'mcp':{'enabled':store.configured and auth0_ready()}}
