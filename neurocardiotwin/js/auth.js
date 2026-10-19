@@ -47,7 +47,7 @@
     if (response.ok) return response.json();
     if (response.status === 401 || response.status === 403) {
       sessionStorage.removeItem(TOKEN_KEY);
-      throw new Error('Your account has not been assigned platform access yet.');
+      throw new Error('Verify your email, then sign in again to activate access.');
     }
     throw new Error('Unable to verify the signed-in session.');
   }
