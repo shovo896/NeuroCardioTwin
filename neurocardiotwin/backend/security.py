@@ -8,6 +8,7 @@ from __future__ import annotations
 import base64
 import json
 import os
+import re
 import time
 import urllib.error
 import urllib.parse
@@ -188,6 +189,69 @@ class SupabaseStore:
     def profile(self, subject: str) -> dict[str, Any] | None:
         result = self._request("GET", "profiles", query=f"?auth0_subject=eq.{urllib.parse.quote(subject, safe='')}&select=*")
         return result[0] if isinstance(result, list) and result else None
+
+    def profile_preferences(self, subject: str) -> dict[str, Any] | None:
+        query = f"?auth0_subject=eq.{urllib.parse.quote(subject, safe='')}&select=display_name,contact_email,avatar_data,updated_at"
+        result = self._request("GET", "profile_preferences", query=query)
+        return result[0] if isinstance(result, list) and result else None
+
+    @staticmethod
+    def _profile_view(identity: Identity, profile: dict[str, Any] | None, preferences: dict[str, Any] | None) -> dict[str, Any]:
+        saved = profile or {}
+        settings = preferences or {}
+        return {
+            "subject": identity.subject,
+            "email": identity.email or saved.get("email"),
+            "display_name": settings.get("display_name") or saved.get("display_name") or identity.name,
+            "contact_email": settings.get("contact_email") or identity.email or saved.get("email"),
+            "avatar_data": settings.get("avatar_data"),
+        }
+
+    def workspace_profile(self, identity: Identity) -> dict[str, Any]:
+        profile = self.upsert_profile(identity)
+        return self._profile_view(identity, profile, self.profile_preferences(identity.subject))
+
+    @staticmethod
+    def _clean_profile_update(payload: dict[str, Any]) -> dict[str, str | None]:
+        if not isinstance(payload, dict):
+            raise ValueError("Profile details must be a JSON object.")
+        display_name = payload.get("display_name")
+        contact_email = payload.get("contact_email")
+        avatar_data = payload.get("avatar_data", "__unchanged__")
+        if not isinstance(display_name, str) or not (1 <= len(display_name.strip()) <= 80):
+            raise ValueError("Display name must contain 1 to 80 characters.")
+        clean_email = None
+        if contact_email is not None:
+            if not isinstance(contact_email, str):
+                raise ValueError("Contact email must be text.")
+            clean_email = contact_email.strip().lower() or None
+            if clean_email and (len(clean_email) > 254 or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", clean_email)):
+                raise ValueError("Enter a valid contact email address.")
+        cleaned: dict[str, str | None] = {"display_name": display_name.strip(), "contact_email": clean_email}
+        if avatar_data != "__unchanged__":
+            if avatar_data in (None, ""):
+                cleaned["avatar_data"] = None
+            elif not isinstance(avatar_data, str) or not re.fullmatch(r"data:image/(?:png|jpeg|webp);base64,[A-Za-z0-9+/=]+", avatar_data):
+                raise ValueError("Profile photo must be a PNG, JPEG, or WebP image.")
+            else:
+                try:
+                    image_bytes = base64.b64decode(avatar_data.split(",", 1)[1], validate=True)
+                except ValueError as exc:
+                    raise ValueError("Profile photo data is invalid.") from exc
+                if not image_bytes or len(image_bytes) > 300_000:
+                    raise ValueError("Profile photo must be 300 KB or smaller.")
+                cleaned["avatar_data"] = avatar_data
+        return cleaned
+
+    def update_profile_preferences(self, identity: Identity, payload: dict[str, Any]) -> dict[str, Any]:
+        settings = self._clean_profile_update(payload)
+        self.upsert_profile(identity)
+        record = {"auth0_subject": identity.subject, **settings, "updated_at": "now()"}
+        # ``updated_at`` is set by the database default on first insert.  A
+        # direct timestamp is not necessary for the browser-facing contract.
+        record.pop("updated_at")
+        self._request("POST", "profile_preferences?on_conflict=auth0_subject", record)
+        return self._profile_view(identity, self.profile(identity.subject), self.profile_preferences(identity.subject))
 
     def memberships(self, profile_id: str | None) -> list[dict[str, Any]]:
         """Return only the caller's organization names and roles, never secrets."""

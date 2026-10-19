@@ -44,19 +44,35 @@ def current_user(request:Request):
     must not turn a successfully verified sign-in into a failed sign-in.
     """
     identity=verify_bearer(request,'mcp:read')
-    profile={'email':identity.email,'display_name':identity.name}
+    profile={'subject':identity.subject,'email':identity.email,'display_name':identity.name,'contact_email':identity.email,'avatar_data':None}
     memberships=[]
     try:
-        saved_profile=store.upsert_profile(identity)
-        if saved_profile:
-            profile=saved_profile
-        memberships=store.memberships(profile.get('id'))
+        profile=store.workspace_profile(identity)
+        saved_profile=store.profile(identity.subject)
+        memberships=store.memberships(saved_profile.get('id') if saved_profile else None)
         store.audit(identity,'profile.session_verified',{'surface':'web'})
     except RuntimeError:
         # Keep the workspace available to an authenticated user; persistence
         # will be retried on the next authenticated request.
         pass
-    return {'subject':identity.subject,'email':profile.get('email'),'display_name':profile.get('display_name'),'memberships':memberships}
+    return {**profile,'memberships':memberships}
+
+@app.put('/api/me')
+async def update_current_user(request:Request):
+    """Save presentation-only profile fields for the verified caller.
+
+    A verified Auth0 sign-in email is deliberately not accepted here: changing
+    it must happen at the identity provider and may require re-verification.
+    """
+    identity=verify_bearer(request,'mcp:read')
+    try:
+        payload=await request.json()
+        profile=store.update_profile_preferences(identity,payload)
+    except ValueError as exc:
+        raise HTTPException(422,str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(503,'Profile saving is not configured. Apply the private profile preferences migration.') from exc
+    return profile
 def require_workspace_access(request:Request):
     """Every workspace/model endpoint requires the same verified MCP user token."""
     return verify_bearer(request,'mcp:read')

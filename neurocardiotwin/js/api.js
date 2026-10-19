@@ -23,5 +23,6 @@ window.API = {
   decision(analysisType, modelResult) { return this.json('/api/decision', { analysis_type: analysisType, model_result: modelResult }); },
   decisionStatus() { return this.request('/api/decision/status'); },
   reindexKnowledge() { return this.json('/api/knowledge/reindex', {}); },
-  history(limit = 20) { return this.request(`/api/history?limit=${encodeURIComponent(limit)}`); }
+  history(limit = 20) { return this.request(`/api/history?limit=${encodeURIComponent(limit)}`); },
+  updateProfile(payload) { return this.request('/api/me', { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload) }); }
 };
