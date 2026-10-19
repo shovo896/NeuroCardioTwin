@@ -83,8 +83,13 @@ window.App = (() => {
   }
   function bindDecisionActions() {
     ['seizure', 'arrhythmia'].forEach(kind => {
-      const button = $(`${kind}-decision-request`);
-      if (button) button.addEventListener('click', () => requestDecision(kind));
+      const panel = document.querySelector(`#${kind} .result-panel`);
+      if (!panel || $(`${kind}-decision-request`)) return;
+      const button = document.createElement('button');
+      button.type = 'button'; button.id = `${kind}-decision-request`; button.className = 'secondary-button decision-button';
+      button.disabled = true; button.textContent = 'Get RAG research context';
+      const output = document.createElement('div'); output.id = `${kind}-decision`; output.className = 'decision-output hidden';
+      panel.append(button, output); button.addEventListener('click', () => requestDecision(kind));
     });
   }
   async function bootstrap(signals) {

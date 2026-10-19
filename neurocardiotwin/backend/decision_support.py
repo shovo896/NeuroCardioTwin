@@ -116,7 +116,10 @@ class RAGDecisionService:
     def _clients(self) -> tuple[InferenceClient, Any]:
         if not self.ready:
             raise HTTPException(503, "AI decision support is not configured.")
-        hf = InferenceClient(provider="hf-inference", api_key=self.config.hf_token)
+        # Provider selection remains automatic: it permits a conversational
+        # provider for chat while selecting a feature-extraction provider for
+        # the embedding model.  No provider credentials reach the browser.
+        hf = InferenceClient(api_key=self.config.hf_token)
         index = Pinecone(api_key=self.config.pinecone_key).Index(host=self.config.pinecone_host)
         return hf, index
 
