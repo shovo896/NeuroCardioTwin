@@ -1,4 +1,4 @@
-# NeuroCardioTwin frontend
+# NeuroCardioTwin
 
 A build-free HTML/CSS/JavaScript research dashboard for EEG/ECG workflows. It is explicitly not a medical device.
 
@@ -31,3 +31,17 @@ Open `http://localhost:5500`. A server is necessary because the app loads `data/
 `data/demo-signals.json` contains an anonymized drawing trace downsampled from the supplied local EEG cache, alongside a browser-generated simulated ECG trace. Both are labelled example/demo data and create no clinical result.
 
 The frontend expects a same-origin FastAPI backend with `GET /api/health`, `GET /api/models/status`, `GET /api/metrics`, and `POST /api/analyze/{seizure,arrhythmia,forecast}`. Uploads use `FormData`; Manual parameters use JSON with `signal_values`, `session_id`, `sampling_rate`, and `threshold`. Unavailable services are shown as disconnected and do not create mock predictions.
+
+## Secure profile and MCP configuration
+
+The browser never receives a Supabase server key. Add these only as Vercel server environment variables:
+
+```text
+SUPABASE_URL=https://<project-ref>.supabase.co
+SUPABASE_SERVICE_ROLE_KEY=<Supabase Secret key>
+AUTH0_DOMAIN=<tenant>.auth0.com
+AUTH0_CLIENT_ID=<Auth0 SPA client ID>
+AUTH0_AUDIENCE=https://neurocardiotwin.vercel.app/mcp
+```
+
+`/mcp` is fail-closed: it is unavailable until both Supabase and Auth0 configuration are present, and it requires a valid Auth0 RS256 access token with the `mcp:read` permission. The protected-resource metadata endpoint is `/.well-known/oauth-protected-resource/mcp`. No raw EEG, ECG, or uploaded signal values are persisted by these profile/audit helpers.
