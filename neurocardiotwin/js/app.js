@@ -1,7 +1,5 @@
 window.App = (() => {
   let eeg = [], ecg = [];
-  const latest = {};
-  let decisionAvailable = false;
   const repeat = (values, n) => Array.from({ length: n }, (_, i) => values[i % values.length]);
   const $ = id => document.getElementById(id);
   const value = x => typeof x === 'number' ? x.toFixed(3) : x ?? '—';
@@ -36,19 +34,20 @@ window.App = (() => {
     $('detail-session').textContent = result.session_id || 'Validated recording';
     $('detail-rate').textContent = modelRate(result.input_quality);
   }
-  function resetDecision(kind) {
-    const button = $(`${kind}-decision-request`), output = $(`${kind}-decision`);
-    if (button) button.disabled = !decisionAvailable;
-    if (output) {
-      output.className = 'decision-output hidden'; output.textContent = '';
-      if (!decisionAvailable) {
-        output.className = 'decision-output';
-        output.textContent = 'Research context is not configured for this workspace yet.';
-      }
+  function renderIntegratedDecision(kind, decision) {
+    const output = $(`${kind}-decision`);
+    if (!output) return;
+    if (!decision?.available) {
+      output.className = 'decision-output error';
+      output.textContent = decision?.message || 'Decision support is temporarily unavailable.';
+      return;
     }
+    const citations = (decision.sources || []).map(source => `[${source.title}]`).join(' ');
+    output.className = 'decision-output';
+    output.innerHTML = `<strong>Integrated decision</strong><p>${escapeHtml(decision.decision)}</p><small>${escapeHtml(decision.safety_notice)} ${escapeHtml(citations)}</small>`;
+    if (decision.history_persisted) loadPrivateHistory();
   }
   function handleAnalysis(kind, result, navigate = true) {
-    latest[kind] = result;
     if (kind === 'seizure') {
       $('seizure-result').textContent = result.detected === true ? 'Seizure pattern detected' : result.detected === false ? 'No seizure pattern detected' : 'Result received';
       $('seizure-prob').textContent = value(result.probability); $('seizure-threshold').textContent = value(result.threshold);
@@ -71,33 +70,17 @@ window.App = (() => {
       $('forecast-status').textContent = `Model forecast ready: ${result.forecast_horizon} samples · ${modelRate(result.input_quality)}.`;
       Twin.record('forecast', result, { pEc: result.predicted_ecg }); if (navigate) Navigation.go('forecast');
     }
-    resetDecision(kind); setSession(result);
-  }
-  async function requestDecision(kind) {
-    const button = $(`${kind}-decision-request`), output = $(`${kind}-decision`), result = latest[kind];
-    if (!result || !button || !output) return;
-    button.disabled = true; output.className = 'decision-output'; output.textContent = 'Retrieving approved research context…';
-    try {
-      const response = await API.decision(kind, result);
-      const citations = response.sources.map(source => `[${source.title}]`).join(' ');
-      output.innerHTML = `<strong>RAG research context</strong><p>${escapeHtml(response.decision)}</p><small>${escapeHtml(response.safety_notice)} ${escapeHtml(citations)}</small>`;
-      if (response.history_persisted) loadPrivateHistory();
-    } catch (error) {
-      output.className = 'decision-output error'; output.textContent = `Decision support unavailable: ${error.message}`;
-    } finally { button.disabled = false; }
+    renderIntegratedDecision(kind, result.integrated_decision); setSession(result);
   }
   function escapeHtml(text) {
     const node = document.createElement('span'); node.textContent = text || ''; return node.innerHTML.replace(/\n/g, '<br>');
   }
-  function bindDecisionActions() {
+  function bindIntegratedDecisionSurfaces() {
     ['seizure', 'arrhythmia'].forEach(kind => {
       const panel = document.querySelector(`#${kind} .result-panel`);
-      if (!panel || $(`${kind}-decision-request`)) return;
-      const button = document.createElement('button');
-      button.type = 'button'; button.id = `${kind}-decision-request`; button.className = 'secondary-button decision-button';
-      button.disabled = true; button.textContent = 'Get RAG research context';
+      if (!panel || $(`${kind}-decision`)) return;
       const output = document.createElement('div'); output.id = `${kind}-decision`; output.className = 'decision-output hidden';
-      panel.append(button, output); button.addEventListener('click', () => requestDecision(kind));
+      panel.append(output);
     });
   }
   function ensurePrivateHistoryPanel() {
@@ -140,7 +123,7 @@ window.App = (() => {
     try {
       const response = await API.history(8);
       if (!response.items?.length) {
-        body.innerHTML = '<i class="fa-solid fa-lock"></i><p>No private decision records yet. Records are created only after you request RAG research context.</p>';
+        body.innerHTML = '<i class="fa-solid fa-lock"></i><p>No private decision records yet. Records are created with completed integrated analyses.</p>';
         return;
       }
       body.className = 'session-list'; body.innerHTML = response.items.map(historyRow).join('');
@@ -150,8 +133,8 @@ window.App = (() => {
   }
   async function loadDecisionStatus() {
     try {
-      const status = await API.decisionStatus(); decisionAvailable = status.available === true; renderKnowledgeAdmin(status);
-    } catch { decisionAvailable = false; }
+      const status = await API.decisionStatus(); renderKnowledgeAdmin(status);
+    } catch { /* The local model result remains available if status cannot load. */ }
   }
   async function bootstrap(signals) {
     const [seizure, arrhythmia] = await Promise.allSettled([
@@ -163,7 +146,7 @@ window.App = (() => {
     Forecast.run();
   }
   async function init() {
-    Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindDecisionActions();
+    Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindIntegratedDecisionSurfaces();
     await Promise.all([loadDecisionStatus(), loadPrivateHistory()]);
     try {
       const response = await fetch('data/demo-signals.json'); if (!response.ok) throw Error();

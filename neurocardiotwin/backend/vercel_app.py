@@ -85,17 +85,13 @@ async def reindex_knowledge(request:Request):
     except Exception as exc:
         raise HTTPException(503,'Knowledge indexing is unavailable. Check server-only AI configuration.') from exc
 
-@app.post('/api/decision')
-async def decision(request:Request):
-    """Generate research-only RAG context from a whitelisted local-model summary."""
-    identity=require_workspace_access(request)
-    try:
-        body=await request.json()
-    except Exception as exc:
-        raise HTTPException(422,'Provide a JSON decision request.') from exc
-    if not isinstance(body,dict) or not isinstance(body.get('model_result'),dict):
-        raise HTTPException(422,'Provide analysis_type and a model_result object.')
-    summary=compact_analysis(str(body.get('analysis_type','')),body['model_result'])
+async def integrated_decision(identity,analysis_type,model_result):
+    """Combine a local model result with approved knowledge on the server.
+
+    The browser never orchestrates this flow and raw waveform arrays are
+    discarded by ``compact_analysis`` before any provider call is made.
+    """
+    summary=compact_analysis(analysis_type,model_result)
     try:
         result=await run_in_threadpool(RAGDecisionService().decide,summary)
     except HTTPException:
@@ -119,6 +115,34 @@ async def decision(request:Request):
         # silently avoid turning a provider result into a data-loss claim.
         pass
     return {**result,'history_persisted':persisted}
+
+async def attach_integrated_decision(identity,analysis_type,model_result):
+    """Keep the local inference usable if optional knowledge services are down."""
+    try:
+        model_result['integrated_decision']={
+            'available':True,
+            **await integrated_decision(identity,analysis_type,model_result),
+        }
+    except Exception:
+        # This deliberately returns no provider details to the browser.  The
+        # local ONNX model remains the source of the displayed result.
+        model_result['integrated_decision']={
+            'available':False,
+            'message':'Decision support is temporarily unavailable. Please retry the analysis shortly.',
+        }
+    return model_result
+
+@app.post('/api/decision')
+async def decision(request:Request):
+    """Compatibility endpoint for non-browser clients using the same server flow."""
+    identity=require_workspace_access(request)
+    try:
+        body=await request.json()
+    except Exception as exc:
+        raise HTTPException(422,'Provide a JSON decision request.') from exc
+    if not isinstance(body,dict) or not isinstance(body.get('model_result'),dict):
+        raise HTTPException(422,'Provide analysis_type and a model_result object.')
+    return await integrated_decision(identity,str(body.get('analysis_type','')),body['model_result'])
 
 @app.get('/api/history')
 def private_history(request:Request,limit:int=20):
@@ -172,14 +196,18 @@ async def payload(request,n,key):
 def run(name,x):return sessions[name].run(None,{'signal':x.astype(np.float32)})[0]
 @app.post('/api/analyze/seizure')
 async def seizure(request:Request):
-    require_workspace_access(request)
+    identity=require_workspace_access(request)
     if sessions.get('seizure') is None:raise HTTPException(503,'Seizure model unavailable')
-    x,b=await payload(request,512,'eeg_file');p=float(1/(1+np.exp(-run('seizure',x[None,None])[0])));t=float(b.get('threshold',.5));rate=sampling_rate(b);return {'session_id':b.get('session_id','local'),'detected':p>=t,'probability':p,'threshold':t,'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
+    x,b=await payload(request,512,'eeg_file');p=float(1/(1+np.exp(-run('seizure',x[None,None])[0])));t=float(b.get('threshold',.5));rate=sampling_rate(b)
+    result={'session_id':b.get('session_id','local'),'detected':p>=t,'probability':p,'threshold':t,'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
+    return await attach_integrated_decision(identity,'seizure',result)
 @app.post('/api/analyze/arrhythmia')
 async def arrhythmia(request:Request):
-    require_workspace_access(request)
+    identity=require_workspace_access(request)
     if sessions.get('arrhythmia') is None:raise HTTPException(503,'Arrhythmia model unavailable')
-    x,b=await payload(request,180,'ecg_file');p=float(1/(1+np.exp(-run('arrhythmia',x[None,None])[0])));rate=sampling_rate(b);return {'session_id':b.get('session_id','local'),'classification':'Abnormal beat' if p>=.5 else 'Normal beat','confidence':max(p,1-p),'abnormal_probability':p,'markers':[],'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
+    x,b=await payload(request,180,'ecg_file');p=float(1/(1+np.exp(-run('arrhythmia',x[None,None])[0])));rate=sampling_rate(b)
+    result={'session_id':b.get('session_id','local'),'classification':'Abnormal beat' if p>=.5 else 'Normal beat','confidence':max(p,1-p),'abnormal_probability':p,'markers':[],'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
+    return await attach_integrated_decision(identity,'arrhythmia',result)
 @app.post('/api/analyze/forecast')
 async def forecast(request:Request):
     require_workspace_access(request)
