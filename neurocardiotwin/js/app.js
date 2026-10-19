@@ -31,7 +31,6 @@ window.App = (() => {
     set('#arrhythmia .panel-head .tag', 'Validated signal');
     set('#sensor-inputs .eyebrow', 'SENSOR INPUT'); set('#sensor-inputs h2', 'Replay an input stream');
     set('#sensor-inputs p:not(.eyebrow)', 'A local waveform stream is available while an external device is not connected.');
-    set('#research .page-heading>p:last-child', 'NeuroCardioTwin turns brain–heart waveforms into one unified digital-twin experience.');
     set('footer', 'NeuroCardioTwin · AI-powered Brain–Heart Digital Twin System');
   }
   function updateInputChart(id, signal, label, color) {

@@ -10,7 +10,7 @@ window.Presentation=(()=>{
     text('#detail-mode','System input');text('#detail-rate','128 Hz EEG input');text('#seizure .page-heading>p:last-child','Validated EEG input is evaluated by the connected trained model.');text('#seizure .panel-head .eyebrow','EEG · INPUT WINDOW');
     text('#arrhythmia .page-heading>p:last-child','Validated ECG input is evaluated by the connected trained model.');text('#arrhythmia .panel-head .eyebrow','ECG · INPUT WINDOW');text('#arrhythmia .panel-head .tag','Validated signal');
     text('#sensor-inputs .eyebrow','SENSOR INPUT');text('#sensor-inputs h2','Replay an input stream');text('#sensor-inputs p:not(.eyebrow)','A local waveform stream is available while an external device is not connected.');
-    text('#research .page-heading>p:last-child','NeuroCardioTwin turns brain–heart waveforms into one unified digital-twin experience.');text('footer','NeuroCardioTwin · AI-powered Brain–Heart Digital Twin System');
+    text('footer','NeuroCardioTwin · AI-powered Brain–Heart Digital Twin System');
     text('#forecast .page-heading>p:last-child','Generate the next EEG and ECG window from the trained forecasting model.');text('#forecast .dashboard-grid article:nth-child(1) h2','ECG model forecast');text('#forecast .dashboard-grid article:nth-child(2) h2','EEG model forecast');document.querySelector('#forecast .forecast-metrics')?.remove();
   }
   document.addEventListener('DOMContentLoaded',clean);return{clean};
