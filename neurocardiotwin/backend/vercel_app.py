@@ -68,6 +68,7 @@ def metrics(request:Request):
     require_workspace_access(request)
     return {n:json.loads(p.read_text()) if (p:=ROOT/'models'/n/'metrics.json').exists() else {} for n in sessions}
 MODEL_SAMPLING_RATE=128.0
+MIN_INPUT_SAMPLES=128
 def sampling_rate(payload):
     try: rate=float(payload.get('sampling_rate',MODEL_SAMPLING_RATE))
     except (TypeError,ValueError): raise HTTPException(422,'sampling_rate must be a positive number.')
@@ -75,12 +76,18 @@ def sampling_rate(payload):
     return rate
 def norm(x,n,rate=MODEL_SAMPLING_RATE):
     x=np.asarray(x,dtype=np.float32).reshape(-1)
-    if x.size<n or not np.isfinite(x).all():raise HTTPException(422,f'Provide at least {n} finite signal samples.')
+    if x.size<MIN_INPUT_SAMPLES or not np.isfinite(x).all():raise HTTPException(422,f'Provide at least {MIN_INPUT_SAMPLES} finite signal samples.')
     # The models were trained at 128 Hz. Convert incoming samples to that time base,
     # then retain one fixed model window. This makes sampling_rate part of inference.
     target=max(2,round(x.size*MODEL_SAMPLING_RATE/rate))
     if target!=x.size:x=np.interp(np.linspace(0,x.size-1,target),np.arange(x.size),x).astype(np.float32)
-    x=x[:n] if x.size>=n else np.pad(x,(0,n-x.size),mode='edge')
+    # The bundled demonstration trace has 128 samples.  The ONNX artefacts
+    # still require their fixed input tensor sizes, so shorter valid windows
+    # are linearly resampled instead of being edge-padded with invented data.
+    if x.size<n:
+        x=np.interp(np.linspace(0,x.size-1,n),np.arange(x.size),x).astype(np.float32)
+    else:
+        x=x[:n]
     return (x-x.mean())/(x.std()+1e-6)
 def input_quality(x,rate):return {'status':'Validated','valid_samples':int(x.size),'finite_ratio':float(np.isfinite(x).mean()),'source_sampling_rate_hz':rate,'model_sampling_rate_hz':MODEL_SAMPLING_RATE}
 async def payload(request,n,key):
