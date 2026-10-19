@@ -63,11 +63,12 @@ def require_workspace_access(request:Request):
 
 @app.get('/api/decision/status')
 def decision_status(request:Request):
-    require_workspace_access(request)
+    identity=require_workspace_access(request)
     config=DecisionConfig.from_environment()
     return {
         'available':config.ready,
         'history_configured':store.configured,
+        'can_reindex':'admin:read' in identity.permissions,
         'privacy':'Only compact local-model summaries are eligible for AI decision support; raw waveforms are excluded.'
     }
 

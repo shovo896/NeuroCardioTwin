@@ -108,6 +108,25 @@ window.App = (() => {
     const sessions = $('twin-history')?.closest('article');
     if (sessions) sessions.insertAdjacentElement('afterend', panel);
   }
+  function renderKnowledgeAdmin(status) {
+    if (!status?.can_reindex) return;
+    ensurePrivateHistoryPanel();
+    const panel = $('private-history');
+    if (!panel || $('knowledge-reindex')) return;
+    const controls = document.createElement('div'); controls.className = 'knowledge-admin'; controls.id = 'knowledge-reindex';
+    controls.innerHTML = '<p><i class="fa-solid fa-shield-halved"></i> Admin control: index only reviewed local knowledge. User histories and signal data are excluded.</p><button type="button" class="secondary-button">Index approved knowledge</button><small aria-live="polite"></small>';
+    const button = controls.querySelector('button'), message = controls.querySelector('small');
+    button.addEventListener('click', async () => {
+      button.disabled = true; message.textContent = 'Indexing reviewed documents…';
+      try {
+        const result = await API.reindexKnowledge();
+        message.textContent = `${result.indexed_documents} approved document(s) indexed successfully.`;
+      } catch (error) {
+        message.textContent = `Indexing unavailable: ${error.message}`;
+      } finally { button.disabled = false; }
+    });
+    panel.append(controls);
+  }
   function historyRow(item) {
     const date = item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved record';
     const summary = item.model_summary || {};
@@ -131,7 +150,7 @@ window.App = (() => {
   }
   async function loadDecisionStatus() {
     try {
-      const status = await API.decisionStatus(); decisionAvailable = status.available === true;
+      const status = await API.decisionStatus(); decisionAvailable = status.available === true; renderKnowledgeAdmin(status);
     } catch { decisionAvailable = false; }
   }
   async function bootstrap(signals) {
