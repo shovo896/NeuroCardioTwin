@@ -28,7 +28,10 @@ def auth_config():
     audience=mcp_resource()
     if not domain or not client_id or not audience:
         raise HTTPException(503,'Browser authentication is not configured.')
-    return {'domain':domain,'client_id':client_id,'audience':audience}
+    # This is a public database-connection name, not a credential.  The
+    # browser uses it only for Auth0's hosted Authentication API signup call.
+    database_connection=os.getenv('AUTH0_DATABASE_CONNECTION','Username-Password-Authentication').strip()
+    return {'domain':domain,'client_id':client_id,'audience':audience,'database_connection':database_connection}
 @app.get('/api/me')
 def current_user(request:Request):
     """Verify a user token and return only that user's profile.
