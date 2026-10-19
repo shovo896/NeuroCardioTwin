@@ -80,6 +80,20 @@ def _source_documents() -> list[dict[str, str]]:
     return documents
 
 
+def _local_sources(limit: int = 3) -> list[dict[str, str]]:
+    """Use reviewed local documents as a bounded continuity fallback.
+
+    This keeps the user-facing research output available when a hosted
+    embedding/chat provider or Pinecone is temporarily unavailable.  It never
+    indexes or exposes user data and is deliberately limited to the approved
+    project knowledge bundled with the server.
+    """
+    return [
+        {"id": doc["id"], "title": doc["title"], "excerpt": doc["text"][:700]}
+        for doc in _source_documents()[:limit]
+    ]
+
+
 def compact_analysis(analysis_type: str, model_result: dict[str, Any]) -> dict[str, Any]:
     """Whitelist a model summary so waveform arrays can never cross the boundary."""
     if analysis_type not in {"seizure", "arrhythmia", "forecast"}:
@@ -194,21 +208,36 @@ class RAGDecisionService:
         )
 
     def decide(self, summary: dict[str, Any]) -> dict[str, Any]:
-        hf, index = self._clients()
         query = (
             f"NeuroCardioTwin research workflow for {summary['analysis_type']} model output. "
             f"Validated samples: {summary['input_quality']['valid_samples']}. "
             "Return only research workflow context and safe next validation steps."
         )
         try:
+            hf, index = self._clients()
             sources = self._retrieve(hf, index, query)
         except RuntimeError as exc:
-            if "No approved knowledge was retrieved" not in str(exc):
-                raise
-            # First-use bootstrap: only reviewed local knowledge is upserted;
-            # no user profile, identifier, or waveform is ever indexed.
-            self.reindex()
-            sources = self._retrieve(hf, index, query)
+            if "No approved knowledge was retrieved" in str(exc):
+                try:
+                    # First-use bootstrap: only reviewed local knowledge is
+                    # upserted; no user data or waveform is ever indexed.
+                    self.reindex()
+                    sources = self._retrieve(hf, index, query)
+                except Exception as retry_exc:
+                    LOGGER.warning("RAG bootstrap unavailable; using local approved knowledge (%s).", type(retry_exc).__name__)
+                    sources = _local_sources()
+            else:
+                LOGGER.warning("RAG retrieval unavailable; using local approved knowledge (%s).", type(exc).__name__)
+                sources = _local_sources()
+        except Exception as exc:
+            LOGGER.warning("RAG provider unavailable; using local approved knowledge (%s).", type(exc).__name__)
+            sources = _local_sources()
+            return {
+                "decision": self._retrieval_guided_decision(summary, sources),
+                "sources": sources,
+                "safety_notice": SAFETY_NOTICE,
+                "prototype": True,
+            }
         evidence = "\n\n".join(f"[{source['title']}]\n{source['excerpt']}" for source in sources)
         system = (
             "You are a research decision-support assistant for NeuroCardioTwin. "
