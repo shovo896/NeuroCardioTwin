@@ -1,6 +1,7 @@
 window.App = (() => {
   let eeg = [], ecg = [];
   const latest = {};
+  let decisionAvailable = false;
   const repeat = (values, n) => Array.from({ length: n }, (_, i) => values[i % values.length]);
   const $ = id => document.getElementById(id);
   const value = x => typeof x === 'number' ? x.toFixed(3) : x ?? '—';
@@ -37,8 +38,14 @@ window.App = (() => {
   }
   function resetDecision(kind) {
     const button = $(`${kind}-decision-request`), output = $(`${kind}-decision`);
-    if (button) button.disabled = false;
-    if (output) { output.className = 'decision-output hidden'; output.textContent = ''; }
+    if (button) button.disabled = !decisionAvailable;
+    if (output) {
+      output.className = 'decision-output hidden'; output.textContent = '';
+      if (!decisionAvailable) {
+        output.className = 'decision-output';
+        output.textContent = 'Research context is not configured for this workspace yet.';
+      }
+    }
   }
   function handleAnalysis(kind, result, navigate = true) {
     latest[kind] = result;
@@ -74,6 +81,7 @@ window.App = (() => {
       const response = await API.decision(kind, result);
       const citations = response.sources.map(source => `[${source.title}]`).join(' ');
       output.innerHTML = `<strong>RAG research context</strong><p>${escapeHtml(response.decision)}</p><small>${escapeHtml(response.safety_notice)} ${escapeHtml(citations)}</small>`;
+      if (response.history_persisted) loadPrivateHistory();
     } catch (error) {
       output.className = 'decision-output error'; output.textContent = `Decision support unavailable: ${error.message}`;
     } finally { button.disabled = false; }
@@ -92,6 +100,40 @@ window.App = (() => {
       panel.append(button, output); button.addEventListener('click', () => requestDecision(kind));
     });
   }
+  function ensurePrivateHistoryPanel() {
+    const page = $('twin');
+    if (!page || $('private-history')) return;
+    const panel = document.createElement('article'); panel.className = 'panel private-history-panel'; panel.id = 'private-history';
+    panel.innerHTML = '<div class="panel-head"><div><p class="eyebrow">PRIVATE DECISION HISTORY</p><h2>Your authenticated account</h2></div><span class="tag neutral">Server-filtered</span></div><div class="empty-state"><i class="fa-solid fa-lock"></i><p>Loading only your saved decision metadata…</p></div>';
+    const sessions = $('twin-history')?.closest('article');
+    if (sessions) sessions.insertAdjacentElement('afterend', panel);
+  }
+  function historyRow(item) {
+    const date = item.created_at ? new Date(item.created_at).toLocaleString() : 'Saved record';
+    const summary = item.model_summary || {};
+    const label = item.analysis_type === 'seizure' ? (summary.detected ? 'Pattern flagged' : 'No pattern flagged') : item.analysis_type === 'arrhythmia' ? (summary.classification || 'Model result') : 'Forecast prepared';
+    return `<div><strong>${escapeHtml(item.analysis_type || 'Analysis')} · ${escapeHtml(label)}</strong><span>${escapeHtml(item.session_label || 'session')} · ${escapeHtml(date)}</span></div>`;
+  }
+  async function loadPrivateHistory() {
+    ensurePrivateHistoryPanel();
+    const panel = $('private-history'); if (!panel) return;
+    const body = panel.querySelector('.empty-state');
+    try {
+      const response = await API.history(8);
+      if (!response.items?.length) {
+        body.innerHTML = '<i class="fa-solid fa-lock"></i><p>No private decision records yet. Records are created only after you request RAG research context.</p>';
+        return;
+      }
+      body.className = 'session-list'; body.innerHTML = response.items.map(historyRow).join('');
+    } catch {
+      body.innerHTML = '<i class="fa-solid fa-lock"></i><p>Private history is unavailable until its server migration is enabled.</p>';
+    }
+  }
+  async function loadDecisionStatus() {
+    try {
+      const status = await API.decisionStatus(); decisionAvailable = status.available === true;
+    } catch { decisionAvailable = false; }
+  }
   async function bootstrap(signals) {
     const [seizure, arrhythmia] = await Promise.allSettled([
       API.analyzeParameters('seizure', { session_id: 'eeg-input-001', threshold: .5, sampling_rate: 128, signal_values: signals.eeg.slice(0, 512) }),
@@ -103,6 +145,7 @@ window.App = (() => {
   }
   async function init() {
     Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindDecisionActions();
+    await Promise.all([loadDecisionStatus(), loadPrivateHistory()]);
     try {
       const response = await fetch('data/demo-signals.json'); if (!response.ok) throw Error();
       const data = await response.json(); eeg = repeat(data.eeg, 512); ecg = Charts.makeECG(320);
