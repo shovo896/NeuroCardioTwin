@@ -29,5 +29,5 @@ window.App=(()=>{
     Navigation.init();Upload.init();Dashboard.init();Twin.init();presentationCopy();
     try{const response=await fetch('data/demo-signals.json');if(!response.ok)throw Error();const data=await response.json();eeg=repeat(data.eeg,512);ecg=Charts.makeECG(320);const signals={...data,eeg,ecg};Charts.init(signals);await Forecast.init(signals);bootstrap(signals)}catch{$('toast').textContent='Signal input could not load. Use a local HTTP server.';$('toast').classList.add('show')}
   }
-  document.addEventListener('DOMContentLoaded',init);return{handleAnalysis,sensorEeg:()=>eeg,sensorEcg:()=>ecg};
+  document.addEventListener('nct:authenticated',init,{once:true});return{handleAnalysis,sensorEeg:()=>eeg,sensorEcg:()=>ecg};
 })();

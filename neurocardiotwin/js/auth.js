@@ -8,6 +8,8 @@
   let config;
 
   const button = () => document.getElementById('auth-button');
+  const gateButton = () => document.getElementById('auth-gate-button');
+  const gateMessage = () => document.getElementById('auth-gate-message');
   const tokens = () => {
     try { return JSON.parse(sessionStorage.getItem(TOKEN_KEY) || 'null'); }
     catch { return null; }
@@ -22,6 +24,17 @@
     toast.id = 'auth-toast'; toast.className = `auth-toast${error ? ' error' : ''}`;
     toast.textContent = message; document.body.appendChild(toast);
     window.setTimeout(() => toast.remove(), 5000);
+  };
+  const lock = (message) => {
+    document.body.classList.remove('auth-pending', 'authenticated');
+    document.body.classList.add('auth-locked');
+    const messageEl = gateMessage(); if (messageEl) messageEl.textContent = message;
+    const gate = gateButton(); if (gate) gate.disabled = false;
+  };
+  const unlock = (me) => {
+    document.body.classList.remove('auth-pending', 'auth-locked');
+    document.body.classList.add('authenticated');
+    document.dispatchEvent(new CustomEvent('nct:authenticated', { detail: me }));
   };
   const render = (profile) => {
     const el = button(); if (!el) return;
@@ -89,17 +102,24 @@
     const oauth = await getConfig(); sessionStorage.removeItem(TOKEN_KEY);
     window.location.assign(`https://${oauth.domain}/v2/logout?${new URLSearchParams({ client_id: oauth.client_id, returnTo: redirectUri })}`);
   }
+  window.NCTAuth = { accessToken: () => tokens()?.access_token || null };
   async function boot() {
     try {
       await finishCallback();
       const me = await profile(); render(me);
-      if (me) announce(`Signed in${me.display_name ? ` as ${me.display_name}` : ''}.`);
-    } catch (error) { render(null); announce(error.message || 'Sign-in failed.', true); }
-    const el = button();
-    if (el) el.addEventListener('click', async () => {
-      try { el.disabled = true; el.dataset.signedIn ? await signOut() : await signIn(); }
-      catch (error) { announce(error.message || 'Sign-in failed.', true); el.disabled = false; }
-    });
+      if (me) { unlock(me); announce(`Signed in${me.display_name ? ` as ${me.display_name}` : ''}.`); }
+      else lock('Sign in with your verified account to access the workspace.');
+    } catch (error) { render(null); lock(error.message || 'Sign-in failed.'); }
+    const authenticate = async (el) => {
+      try {
+        el.disabled = true;
+        if (el.dataset.signedIn) await signOut(); else await signIn();
+      } catch (error) {
+        lock(error.message || 'Sign-in failed.'); announce(error.message || 'Sign-in failed.', true); el.disabled = false;
+      }
+    };
+    const topButton = button(); if (topButton) topButton.addEventListener('click', () => authenticate(topButton));
+    const signInButton = gateButton(); if (signInButton) signInButton.addEventListener('click', () => authenticate(signInButton));
   }
   document.addEventListener('DOMContentLoaded', boot);
 })();

@@ -38,14 +38,21 @@ def current_user(request:Request):
     except RuntimeError as exc:
         raise HTTPException(503,str(exc)) from exc
     return {'subject':identity.subject,'email':profile.get('email'),'display_name':profile.get('display_name'),'memberships':memberships}
+def require_workspace_access(request:Request):
+    """Every workspace/model endpoint requires the same verified MCP user token."""
+    return verify_bearer(request,'mcp:read')
+
 @app.get('/api/models/status')
-def status():return {n:{'loaded':m is not None} for n,m in sessions.items()}
+def status(request:Request):
+    require_workspace_access(request);return {n:{'loaded':m is not None} for n,m in sessions.items()}
 @app.get('/api/capabilities')
-def capabilities():
+def capabilities(request:Request):
+    require_workspace_access(request)
     ready=sessions.get('forecast') is not None
     return {'forecast':{'available':ready,'input_samples':{'ecg':256,'eeg':256},'horizons':[64] if ready else []}}
 @app.get('/api/metrics')
-def metrics():
+def metrics(request:Request):
+    require_workspace_access(request)
     return {n:json.loads(p.read_text()) if (p:=ROOT/'models'/n/'metrics.json').exists() else {} for n in sessions}
 MODEL_SAMPLING_RATE=128.0
 def sampling_rate(payload):
@@ -72,14 +79,17 @@ async def payload(request,n,key):
 def run(name,x):return sessions[name].run(None,{'signal':x.astype(np.float32)})[0]
 @app.post('/api/analyze/seizure')
 async def seizure(request:Request):
+    require_workspace_access(request)
     if sessions.get('seizure') is None:raise HTTPException(503,'Seizure model unavailable')
     x,b=await payload(request,512,'eeg_file');p=float(1/(1+np.exp(-run('seizure',x[None,None])[0])));t=float(b.get('threshold',.5));rate=sampling_rate(b);return {'session_id':b.get('session_id','local'),'detected':p>=t,'probability':p,'threshold':t,'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
 @app.post('/api/analyze/arrhythmia')
 async def arrhythmia(request:Request):
+    require_workspace_access(request)
     if sessions.get('arrhythmia') is None:raise HTTPException(503,'Arrhythmia model unavailable')
     x,b=await payload(request,180,'ecg_file');p=float(1/(1+np.exp(-run('arrhythmia',x[None,None])[0])));rate=sampling_rate(b);return {'session_id':b.get('session_id','local'),'classification':'Abnormal beat' if p>=.5 else 'Normal beat','confidence':max(p,1-p),'abnormal_probability':p,'markers':[],'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
 @app.post('/api/analyze/forecast')
 async def forecast(request:Request):
+    require_workspace_access(request)
     if sessions.get('forecast') is None:raise HTTPException(503,'Forecast model unavailable')
     b=await request.json();rate=sampling_rate(b);x=np.stack((norm(b.get('ecg_values',[]),256,rate),norm(b.get('eeg_values',[]),256,rate)));p=run('forecast',x[None]);return {'session_id':b.get('session_id','local'),'forecast_horizon':64,'predicted_ecg':p[0,0].tolist(),'predicted_eeg':p[0,1].tolist(),'processed_ecg':x[0].tolist(),'processed_eeg':x[1].tolist(),'input_quality':input_quality(x,rate),'prototype':True}
 

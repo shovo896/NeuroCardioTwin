@@ -9,7 +9,17 @@
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
   <link rel="stylesheet" href="css/style.css"><link rel="stylesheet" href="css/dashboard.css"><link rel="stylesheet" href="css/responsive.css">
 </head>
-<body>
+<body class="auth-pending">
+  <section class="auth-gate" id="auth-gate" aria-live="polite" aria-labelledby="auth-gate-title">
+    <div class="auth-gate-card">
+      <div class="auth-gate-mark"><i class="fa-solid fa-wave-square"></i></div>
+      <p class="eyebrow">NEUROCARDIOTWIN · SECURE WORKSPACE</p>
+      <h1 id="auth-gate-title">Sign in to continue.</h1>
+      <p id="auth-gate-message">Checking your secure session…</p>
+      <button class="primary-button auth-gate-button" id="auth-gate-button" type="button" disabled><i class="fa-solid fa-right-to-bracket"></i> Sign in securely</button>
+      <p class="auth-gate-note"><i class="fa-solid fa-shield-halved"></i> Access requires a verified NeuroCardioTwin account.</p>
+    </div>
+  </section>
   <div class="app-shell">
     <aside class="sidebar" id="sidebar" aria-label="Primary navigation">
       <a href="#dashboard" class="brand nav-link"><span class="brand-mark"><i class="fa-solid fa-wave-square"></i></span><span>Neuro<span>Cardio</span>Twin<small>AI DIGITAL TWIN SYSTEM</small></span></a>
