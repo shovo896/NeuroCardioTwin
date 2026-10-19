@@ -1,2 +1,4 @@
 /chb_cache.npz
 neurocardiotwin/.venv/
+
+.env
