@@ -4,7 +4,9 @@
   const TOKEN_KEY = 'nct.oauth.tokens';
   const VERIFIER_KEY = 'nct.oauth.verifier';
   const STATE_KEY = 'nct.oauth.state';
-  const redirectUri = window.location.origin + window.location.pathname;
+  // Keep the OAuth callback canonical.  A static host may serve index.html
+  // for the same page, but Auth0 treats / and /index.html as distinct URLs.
+  const redirectUri = `${window.location.origin}/`;
   let config;
 
   const button = () => document.getElementById('auth-button');
