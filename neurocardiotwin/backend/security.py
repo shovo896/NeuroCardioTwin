@@ -212,6 +212,53 @@ class SupabaseStore:
             },
         )
 
+    def save_private_history(
+        self,
+        identity: Identity,
+        analysis_type: str,
+        session_label: str,
+        model_summary: dict[str, Any],
+        decision_text: str | None,
+        source_titles: list[str],
+    ) -> dict[str, Any]:
+        """Persist metadata only under the verified caller's server-side profile.
+
+        The subject is taken solely from a signature-verified Auth0 token; it
+        is never supplied by the browser request body.
+        """
+        profile = self.upsert_profile(identity)
+        profile_id = profile.get("id") if isinstance(profile, dict) else None
+        if not isinstance(profile_id, str) or not profile_id:
+            raise RuntimeError("The authenticated user profile is unavailable.")
+        result = self._request(
+            "POST",
+            "analysis_history",
+            {
+                "profile_id": profile_id,
+                "analysis_type": analysis_type,
+                "session_label": session_label[:80],
+                "model_summary": model_summary,
+                "decision_text": decision_text[:2400] if isinstance(decision_text, str) else None,
+                "source_titles": source_titles[:5],
+            },
+        )
+        return result[0] if isinstance(result, list) and result else {}
+
+    def private_history(self, identity: Identity, limit: int = 20) -> list[dict[str, Any]]:
+        """Fetch only records that belong to the verified caller."""
+        profile = self.profile(identity.subject)
+        profile_id = profile.get("id") if isinstance(profile, dict) else None
+        if not isinstance(profile_id, str) or not profile_id:
+            return []
+        safe_limit = max(1, min(int(limit), 50))
+        query = (
+            f"?profile_id=eq.{urllib.parse.quote(profile_id, safe='')}"
+            "&select=id,analysis_type,session_label,model_summary,decision_text,source_titles,created_at"
+            f"&order=created_at.desc&limit={safe_limit}"
+        )
+        result = self._request("GET", "analysis_history", query=query)
+        return result if isinstance(result, list) else []
+
 
 store = SupabaseStore()
 
