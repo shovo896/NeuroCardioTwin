@@ -139,7 +139,10 @@ async def attach_integrated_decision(identity,analysis_type,model_result):
             'available':True,
             **await integrated_decision(identity,analysis_type,model_result),
         }
-    except Exception:
+    except Exception as exc:
+        # Server logs retain only an exception category for operational
+        # diagnosis; no waveform, token, email, or Auth0 subject is logged.
+        __import__('logging').getLogger(__name__).warning('Decision support unavailable: %s',type(exc).__name__)
         # This deliberately returns no provider details to the browser.  The
         # local ONNX model remains the source of the displayed result.
         model_result['integrated_decision']={

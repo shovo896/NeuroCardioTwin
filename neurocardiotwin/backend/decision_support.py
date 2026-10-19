@@ -6,6 +6,7 @@ summary of an already-completed local ONNX model result.
 """
 from __future__ import annotations
 
+import logging
 import os
 from dataclasses import dataclass
 from pathlib import Path
@@ -22,6 +23,7 @@ SAFETY_NOTICE = (
     "Research decision support only; not a diagnosis, triage, treatment, or "
     "medical-device output. Escalate clinical concerns to a qualified clinician."
 )
+LOGGER = logging.getLogger(__name__)
 
 
 @dataclass(frozen=True)
@@ -35,11 +37,18 @@ class DecisionConfig:
 
     @classmethod
     def from_environment(cls) -> "DecisionConfig":
+        # ``:fastest`` is a routing shorthand, not part of a Hub model ID.
+        # InferenceClient expects the canonical model ID in its ``model``
+        # parameter, so accepting the suffix here keeps an older Vercel value
+        # from disabling the entire decision-support path.
+        chat_model = os.getenv("HF_CHAT_MODEL", "Qwen/Qwen2.5-7B-Instruct").strip() or "Qwen/Qwen2.5-7B-Instruct"
+        if chat_model.endswith(":fastest"):
+            chat_model = chat_model.removesuffix(":fastest")
         return cls(
             hf_token=os.getenv("HF_INFERENCE_TOKEN", "").strip(),
             pinecone_key=os.getenv("PINECONE_API_KEY", "").strip(),
             pinecone_host=os.getenv("PINECONE_INDEX_HOST", "").strip().removeprefix("https://").rstrip("/"),
-            hf_chat_model=os.getenv("HF_CHAT_MODEL", "google/gemma-2-2b-it:fastest").strip(),
+            hf_chat_model=chat_model,
             hf_embedding_model=os.getenv("HF_EMBEDDING_MODEL", "BAAI/bge-small-en-v1.5").strip(),
             namespace=os.getenv("PINECONE_NAMESPACE", "neurocardiotwin-knowledge-v1").strip() or "neurocardiotwin-knowledge-v1",
         )
@@ -120,7 +129,17 @@ class RAGDecisionService:
         # provider for chat while selecting a feature-extraction provider for
         # the embedding model.  No provider credentials reach the browser.
         hf = InferenceClient(api_key=self.config.hf_token)
-        index = Pinecone(api_key=self.config.pinecone_key).Index(host=self.config.pinecone_host)
+        client = Pinecone(api_key=self.config.pinecone_key)
+        host = self.config.pinecone_host
+        # Pinecone's console shows both an index name and a data-plane host.
+        # Resolve a bare index name so a harmless configuration mix-up does not
+        # make all user decisions fail.
+        if "." not in host:
+            details = client.describe_index(host)
+            host = details.get("host", "") if isinstance(details, dict) else getattr(details, "host", "")
+        if not isinstance(host, str) or not host:
+            raise RuntimeError("Pinecone index host could not be resolved.")
+        index = client.Index(host=host)
         return hf, index
 
     def _embed(self, hf: InferenceClient, text: str) -> list[float]:
@@ -155,6 +174,25 @@ class RAGDecisionService:
             raise RuntimeError("No approved knowledge was retrieved. Reindex the knowledge base first.")
         return sources
 
+    @staticmethod
+    def _retrieval_guided_decision(summary: dict[str, Any], sources: list[dict[str, str]]) -> str:
+        """Keep a retrieval-grounded research response available if a chat
+        provider is temporarily unavailable.  The user still receives one
+        unified local-model + approved-knowledge result, never a diagnosis.
+        """
+        if summary["analysis_type"] == "seizure":
+            result = "Local EEG model flagged a research pattern" if summary.get("detected") else "Local EEG model did not flag a research pattern"
+        elif summary["analysis_type"] == "arrhythmia":
+            result = f"Local ECG model returned {summary.get('classification', 'an unlabelled rhythm result')}"
+        else:
+            result = f"Local forecasting model prepared a {summary.get('forecast_horizon', 0)}-sample research forecast"
+        source_names = ", ".join(f"[{source['title']}]" for source in sources[:2])
+        return (
+            f"• {result}; treat it as a prototype research output, not a clinical conclusion.\n"
+            f"• Follow the approved validation workflow and inspect input quality before any further research use. {source_names}\n"
+            "• If a clinical concern exists, use an appropriate qualified-clinician workflow rather than this interface."
+        )
+
     def decide(self, summary: dict[str, Any]) -> dict[str, Any]:
         hf, index = self._clients()
         query = (
@@ -162,7 +200,15 @@ class RAGDecisionService:
             f"Validated samples: {summary['input_quality']['valid_samples']}. "
             "Return only research workflow context and safe next validation steps."
         )
-        sources = self._retrieve(hf, index, query)
+        try:
+            sources = self._retrieve(hf, index, query)
+        except RuntimeError as exc:
+            if "No approved knowledge was retrieved" not in str(exc):
+                raise
+            # First-use bootstrap: only reviewed local knowledge is upserted;
+            # no user profile, identifier, or waveform is ever indexed.
+            self.reindex()
+            sources = self._retrieve(hf, index, query)
         evidence = "\n\n".join(f"[{source['title']}]\n{source['excerpt']}" for source in sources)
         system = (
             "You are a research decision-support assistant for NeuroCardioTwin. "
@@ -171,16 +217,21 @@ class RAGDecisionService:
             "Give at most three concise validation-oriented bullet points and cite source titles in brackets."
         )
         user = f"MODEL SUMMARY (no raw signal):\n{summary}\n\nAPPROVED EVIDENCE:\n{evidence}"
-        completion = hf.chat_completion(
-            model=self.config.hf_chat_model,
-            messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
-            max_tokens=260,
-            temperature=0.1,
-        )
-        choices = getattr(completion, "choices", None)
-        if not choices:
-            raise RuntimeError("Hugging Face returned no decision-support response.")
-        content = getattr(getattr(choices[0], "message", None), "content", None)
-        if not isinstance(content, str) or not content.strip():
-            raise RuntimeError("Hugging Face returned an empty decision-support response.")
+        try:
+            completion = hf.chat_completion(
+                model=self.config.hf_chat_model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                max_tokens=260,
+                temperature=0.1,
+            )
+            choices = getattr(completion, "choices", None)
+            content = getattr(getattr(choices[0], "message", None), "content", None) if choices else None
+            if not isinstance(content, str) or not content.strip():
+                raise RuntimeError("Hugging Face returned an empty decision-support response.")
+        except Exception as exc:
+            # Avoid exposing provider internals to the user.  Retrieval has
+            # already succeeded, so a bounded evidence-guided decision remains
+            # safer and more useful than failing the complete analysis.
+            LOGGER.warning("Chat generation unavailable; using retrieval-guided decision (%s).", type(exc).__name__)
+            content = self._retrieval_guided_decision(summary, sources)
         return {"decision": content.strip()[:2400], "sources": sources, "safety_notice": SAFETY_NOTICE, "prototype": True}
