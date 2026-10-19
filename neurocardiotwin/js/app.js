@@ -7,6 +7,15 @@ window.App = (() => {
   const set = (selector, text) => { const element = document.querySelector(selector); if (element) element.textContent = text; };
   const modelRate = quality => quality?.source_sampling_rate_hz ? `${quality.source_sampling_rate_hz} Hz source → ${quality.model_sampling_rate_hz} Hz model input` : '128 Hz model input';
 
+  function renderProfile(profile) {
+    const name = profile?.display_name || profile?.email?.split('@')[0] || 'NeuroCardioTwin user';
+    const email = profile?.email || 'Verified account';
+    const initials = name.split(/\s+/).filter(Boolean).slice(0, 2).map(part => part[0]).join('').toUpperCase() || 'NC';
+    set('#profile-name', name); set('#profile-email', email);
+    set('#profile-display-name', name); set('#profile-email-detail', email);
+    set('#profile-avatar', initials);
+  }
+
   function presentationCopy() {
     set('#dashboard .metric-grid article:nth-child(3) strong', 'Validated input');
     set('#dashboard .metric-grid article:nth-child(3) p', 'Numeric-sample validation');
@@ -30,9 +39,9 @@ window.App = (() => {
     Charts.line(id, signal.map((_, index) => index + 1), [{ label, data: signal, borderColor: color, backgroundColor: `${color}22`, fill: true }]);
   }
   function setSession(result) {
-    $('session-name').textContent = result.session_id || 'Validated recording';
-    $('detail-session').textContent = result.session_id || 'Validated recording';
-    $('detail-rate').textContent = modelRate(result.input_quality);
+    const sessionName = result.session_id || 'Validated recording';
+    set('#session-name', sessionName); set('#detail-session', sessionName);
+    set('#detail-rate', modelRate(result.input_quality));
   }
   function renderIntegratedDecision(kind, decision) {
     const output = $(`${kind}-decision`);
@@ -51,7 +60,7 @@ window.App = (() => {
     if (kind === 'seizure') {
       $('seizure-result').textContent = result.detected === true ? 'Seizure pattern detected' : result.detected === false ? 'No seizure pattern detected' : 'Result received';
       $('seizure-prob').textContent = value(result.probability); $('seizure-threshold').textContent = value(result.threshold);
-      $('seizure-summary').textContent = 'Model result ready';
+      set('#seizure-summary', 'Model result ready');
       set('#dashboard .metric-grid article:nth-child(1) p', 'Validated model inference'); set('#dashboard .readiness p:last-child', 'Trained-model inference completed');
       $('seizure-quality').textContent = validated(result.input_quality); $('seizure-quality').className = 'tag';
       $('seizure-note').textContent = `ONNX model evaluated ${validated(result.input_quality).toLowerCase()} · ${modelRate(result.input_quality)}.`;
@@ -59,7 +68,7 @@ window.App = (() => {
       if (navigate) Navigation.go('seizure');
     } else if (kind === 'arrhythmia') {
       $('arrhythmia-result').textContent = result.classification || 'Result received'; $('arrhythmia-confidence').textContent = value(result.confidence);
-      $('arrhythmia-markers').textContent = result.markers?.length ?? '—'; $('arrhythmia-summary').textContent = 'Model result ready';
+      $('arrhythmia-markers').textContent = result.markers?.length ?? '—'; set('#arrhythmia-summary', 'Model result ready');
       set('#dashboard .metric-grid article:nth-child(2) p', 'Validated model inference'); set('#dashboard .readiness p:last-child', 'Trained-model inference completed');
       $('arrhythmia-note').textContent = `ONNX model evaluated ${validated(result.input_quality).toLowerCase()} · ${modelRate(result.input_quality)}.`;
       updateInputChart('arrhythmia-ecg', result.processed_signal, 'ECG model input', '#14b8a6');
@@ -83,14 +92,7 @@ window.App = (() => {
       panel.append(output);
     });
   }
-  function ensurePrivateHistoryPanel() {
-    const page = $('twin');
-    if (!page || $('private-history')) return;
-    const panel = document.createElement('article'); panel.className = 'panel private-history-panel'; panel.id = 'private-history';
-    panel.innerHTML = '<div class="panel-head"><div><p class="eyebrow">PRIVATE DECISION HISTORY</p><h2>Your authenticated account</h2></div><span class="tag neutral">Server-filtered</span></div><div class="empty-state"><i class="fa-solid fa-lock"></i><p>Loading only your saved decision metadata…</p></div>';
-    const sessions = $('twin-history')?.closest('article');
-    if (sessions) sessions.insertAdjacentElement('afterend', panel);
-  }
+  function ensurePrivateHistoryPanel() { return $('private-history'); }
   function renderKnowledgeAdmin(status) {
     if (!status?.can_reindex) return;
     ensurePrivateHistoryPanel();
@@ -117,17 +119,23 @@ window.App = (() => {
     return `<div><strong>${escapeHtml(item.analysis_type || 'Analysis')} · ${escapeHtml(label)}</strong><span>${escapeHtml(item.session_label || 'session')} · ${escapeHtml(date)}</span></div>`;
   }
   async function loadPrivateHistory() {
-    ensurePrivateHistoryPanel();
-    const panel = $('private-history'); if (!panel) return;
-    const body = panel.querySelector('.empty-state');
+    const panel = ensurePrivateHistoryPanel(); if (!panel) return;
+    const body = $('private-history-body');
+    if (!body) return;
     try {
       const response = await API.history(8);
+      set('#profile-history-count', String(response.items?.length || 0));
       if (!response.items?.length) {
+        set('#profile-latest', 'No analysis yet');
+        body.className = 'empty-state';
         body.innerHTML = '<i class="fa-solid fa-lock"></i><p>No private decision records yet. Records are created with completed integrated analyses.</p>';
         return;
       }
+      const newest = response.items[0];
+      set('#profile-latest', newest.analysis_type ? `${newest.analysis_type[0].toUpperCase()}${newest.analysis_type.slice(1)} analysis` : 'Recent analysis');
       body.className = 'session-list'; body.innerHTML = response.items.map(historyRow).join('');
     } catch {
+      body.className = 'empty-state';
       body.innerHTML = '<i class="fa-solid fa-lock"></i><p>Private history is unavailable until its server migration is enabled.</p>';
     }
   }
@@ -145,8 +153,9 @@ window.App = (() => {
     if (arrhythmia.status === 'fulfilled') handleAnalysis('arrhythmia', arrhythmia.value, false);
     Forecast.run();
   }
-  async function init() {
+  async function init(event) {
     Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindIntegratedDecisionSurfaces();
+    renderProfile(event?.detail);
     await Promise.all([loadDecisionStatus(), loadPrivateHistory()]);
     try {
       const response = await fetch('data/demo-signals.json'); if (!response.ok) throw Error();
