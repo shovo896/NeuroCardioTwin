@@ -45,3 +45,22 @@ AUTH0_AUDIENCE=https://neurocardiotwin.vercel.app/mcp
 ```
 
 `/mcp` is fail-closed: it is unavailable until both Supabase and Auth0 configuration are present, and it requires a valid Auth0 RS256 access token with the `mcp:read` permission. The protected-resource metadata endpoint is `/.well-known/oauth-protected-resource/mcp`. No raw EEG, ECG, or uploaded signal values are persisted by these profile/audit helpers.
+
+### Public standard-user tier
+
+For self-service sign-up, configure an Auth0 Login / Post Login Action with this
+code and add the SPA client ID as the `NCT_WEB_CLIENT_ID` Action secret:
+
+```js
+exports.onExecutePostLogin = async (event, api) => {
+  if (event.client.client_id === event.secrets.NCT_WEB_CLIENT_ID) {
+    api.accessToken.setCustomClaim(
+      'https://neurocardiotwin.app/permissions', ['mcp:read']
+    );
+  }
+};
+```
+
+The API accepts this only after Auth0 JWT signature, issuer, audience, and
+expiry validation. It grants standard MCP access only; admin permissions remain
+role-only.
