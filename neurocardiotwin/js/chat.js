@@ -2,8 +2,8 @@
 window.NCTChat = (() => {
   const $ = id => document.getElementById(id);
   const copy = {
-    en: { greeting: 'Ask about your model result, signal validation, or the research workflow. I reply from approved knowledge only.', placeholder: 'Ask a research workflow question…', sending: 'Thinking…', error: 'The assistant is unavailable right now. Please try again.', note: 'Chat is not saved. Do not share personal data or raw signal samples. Research use only.' },
-    bn: { greeting: 'মডেলের ফলাফল, signal validation বা গবেষণার workflow সম্পর্কে প্রশ্ন করুন। আমি শুধু অনুমোদিত জ্ঞানভিত্তিক উত্তর দিই।', placeholder: 'গবেষণা সম্পর্কিত প্রশ্ন লিখুন…', sending: 'উত্তর তৈরি হচ্ছে…', error: 'সহকারী এখন উপলব্ধ নয়। একটু পরে আবার চেষ্টা করুন।', note: 'চ্যাট সংরক্ষণ করা হয় না। ব্যক্তিগত তথ্য বা raw signal sample দেবেন না। এটি কেবল গবেষণার জন্য।' }
+    en: { greeting: 'Ask about a model result, research workflow, or a general health concern. I provide safe general information—not a diagnosis or emergency service.', placeholder: 'Ask a health or research question…', sending: 'Thinking…', error: 'The assistant is unavailable right now. Please try again.', note: 'Chat is not saved. Do not share personal data or raw signal samples. For urgent symptoms in Bangladesh, call 999.' },
+    bn: { greeting: 'মডেলের ফলাফল, গবেষণার workflow বা সাধারণ স্বাস্থ্য-উদ্বেগ সম্পর্কে প্রশ্ন করুন। আমি সাধারণ নিরাপদ তথ্য দিই—রোগ নির্ণয় নয়।', placeholder: 'স্বাস্থ্য বা গবেষণা-সম্পর্কিত প্রশ্ন লিখুন…', sending: 'উত্তর তৈরি হচ্ছে…', error: 'সহকারী এখন উপলব্ধ নয়। একটু পরে আবার চেষ্টা করুন।', note: 'চ্যাট সংরক্ষণ করা হয় না। ব্যক্তিগত তথ্য বা raw signal sample দেবেন না। জরুরি উপসর্গে বাংলাদেশে ৯৯৯-এ কল করুন।' }
   };
   const escape = value => { const el = document.createElement('span'); el.textContent = value || ''; return el.innerHTML.replace(/\n/g, '<br>'); };
   function append(text, kind) { const root = $('chat-messages'); if (!root) return null; const item = document.createElement('article'); item.className = `chat-message ${kind}`; item.innerHTML = escape(text); root.append(item); root.scrollTop = root.scrollHeight; return item; }

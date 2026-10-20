@@ -289,6 +289,104 @@ class RAGDecisionService:
             f"{citations}"
         )
 
+    @staticmethod
+    def _health_topic(question: str) -> str | None:
+        """Recognise general health questions without trying to diagnose them."""
+        text = question.casefold()
+        urgent = (
+            "chest pain", "chest pressure", "difficulty breathing", "shortness of breath",
+            "can't breathe", "cannot breathe", "faint", "unconscious", "confusion",
+            "stroke", "severe bleeding", "seizure", "self harm", "suicide",
+            "বুক ব্যথ", "বুকে চাপ", "শ্বাস নিতে কষ্ট", "শ্বাসকষ্ট", "অজ্ঞান",
+            "বিভ্রান্ত", "স্ট্রোক", "রক্তপাত", "খিঁচুনি", "আত্মহত্য",
+        )
+        if any(term in text for term in urgent):
+            return "urgent"
+        mood = (
+            "feel bad", "feeling bad", "feel unwell", "feeling unwell", "feel sick",
+            "sad", "anxious", "anxiety", "stress", "depressed", "panic",
+            "খারাপ লাগ", "মন খারাপ", "উদ্বিগ্ন", "উদ্বেগ", "চাপ লাগ", "স্ট্রেস",
+        )
+        if any(term in text for term in mood):
+            return "wellbeing"
+        health = (
+            "health", "symptom", "fever", "headache", "cough", "cold", "pain",
+            "nausea", "vomit", "diarrhea", "diarrhoea", "dizzy", "weak", "medicine",
+            "health", "শরীর", "জ্বর", "মাথা ব্যথ", "কাশি", "সর্দি", "ব্যথা",
+            "বমি", "ডায়রিয়া", "ডায়রিয়া", "ঘোর", "দুর্বল", "ওষুধ",
+        )
+        return "general" if any(term in text for term in health) else None
+
+    @staticmethod
+    def _health_fallback(question: str, language: str, topic: str) -> str:
+        """Safe, question-aware continuity reply when the chat model is unavailable.
+
+        This is deliberately general: it gives immediate support and useful
+        follow-up questions but never turns a text message into a diagnosis or
+        a medication recommendation.
+        """
+        if language == "bn":
+            if topic == "urgent":
+                return (
+                    "আপনার কথায় জরুরি লক্ষণের সম্ভাবনা আছে। চ্যাটে অপেক্ষা করবেন না—বাংলাদেশে থাকলে এখনই ৯৯৯-এ কল করুন "
+                    "বা নিকটস্থ জরুরি বিভাগে যান; একা থাকলে কাছের কাউকে সঙ্গে থাকতে বলুন। আমি কারণ নির্ণয় করতে পারি না। "
+                    "বাংলাদেশের বাইরে হলে স্থানীয় জরুরি নম্বরে কল করুন।"
+                )
+            if topic == "wellbeing":
+                return (
+                    "খারাপ লাগছে শুনে দুঃখিত। এখন নিরাপদ জায়গায় বসুন বা শুয়ে বিশ্রাম নিন, সম্ভব হলে পানি খান, "
+                    "এবং বিশ্বাসযোগ্য একজন মানুষকে জানান। কতক্ষণ ধরে এমন লাগছে, কী কী উপসর্গ হচ্ছে, আর বুকব্যথা/শ্বাসকষ্ট/অজ্ঞান হওয়ার মতো কিছু আছে কি? "
+                    "উপসর্গ বাড়লে বা নতুন জরুরি লক্ষণ হলে ৯৯৯ বা জরুরি চিকিৎসাসেবা নিন।"
+                )
+            return (
+                f"আপনার প্রশ্নটি বুঝেছি: “{question[:180]}”। আমি সাধারণ স্বাস্থ্যতথ্য দিতে পারি, কিন্তু রোগ নির্ণয় করতে পারি না। "
+                "লক্ষণটি কখন শুরু হয়েছে, কতটা তীব্র, জ্বর/ব্যথা/শ্বাসকষ্ট আছে কি, এবং কোনো দীর্ঘমেয়াদি রোগ বা নিয়মিত ওষুধ আছে কি জানান। "
+                "উপসর্গ স্থায়ী, বাড়তে থাকা, বা উদ্বেগজনক হলে একজন চিকিৎসকের পরামর্শ নিন।"
+            )
+        if topic == "urgent":
+            return (
+                "Your message may describe an urgent symptom. Do not wait for chat—if you are in Bangladesh, call 999 now or go to an emergency department; "
+                "ask someone nearby to stay with you. I cannot determine the cause. If you are elsewhere, call your local emergency number."
+            )
+        if topic == "wellbeing":
+            return (
+                "I’m sorry you are feeling unwell. For now, get to a safe place to sit or lie down, sip water if that is safe for you, and tell someone you trust. "
+                "When did this start, what symptoms do you have, and do you have chest pain, trouble breathing, or fainting? If symptoms worsen or urgent signs appear, call 999 or seek emergency care."
+            )
+        return (
+            f"I understand you are asking about: “{question[:180]}”. I can offer general health information, but I cannot diagnose a condition. "
+            "Please share when it started, how severe it is, any fever/pain/breathing difficulty, and relevant long-term conditions or regular medicines. "
+            "Seek a clinician’s advice if it persists, worsens, or concerns you."
+        )
+
+    def _health_chat(self, question: str, language: str, topic: str) -> str:
+        """Use the chat provider for general health education, with a safe fallback."""
+        language_instruction = "Reply in clear Bangla." if language == "bn" else "Reply in clear English."
+        system = (
+            "You provide brief, supportive general health education. Do not diagnose, prescribe, give medication doses, "
+            "or claim certainty. Respond directly to the user's question, ask up to two relevant follow-up questions, "
+            "and suggest an appropriate clinician when symptoms persist or worsen. For chest pain, severe breathing difficulty, "
+            "fainting, confusion, seizure, severe bleeding, or self-harm risk, state that this needs emergency help now; "
+            "say call 999 in Bangladesh or the local emergency number elsewhere. "
+            + language_instruction
+        )
+        try:
+            _, chat_hf, _ = self._clients()
+            completion = chat_hf.chat_completion(
+                model=self.config.hf_chat_model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": question}],
+                max_tokens=260,
+                temperature=0.25,
+            )
+            choices = getattr(completion, "choices", None)
+            answer = getattr(getattr(choices[0], "message", None), "content", None) if choices else None
+            if not isinstance(answer, str) or not answer.strip():
+                raise RuntimeError("Hugging Face returned an empty health-support response.")
+            return answer.strip()[:2400]
+        except Exception as exc:
+            LOGGER.warning("Health chat unavailable; using question-aware safety reply (%s).", type(exc).__name__)
+            return self._health_fallback(question, language, topic)
+
     def chat(self, message: Any, language: Any = "en") -> dict[str, Any]:
         """Answer a short authenticated workspace question using approved RAG data.
 
@@ -300,6 +398,15 @@ class RAGDecisionService:
         if len(question) > 800:
             raise HTTPException(422, "Keep the question under 800 characters.")
         selected_language = "bn" if str(language).lower() in {"bn", "bangla", "bengali"} else "en"
+        health_topic = self._health_topic(question)
+        if health_topic:
+            return {
+                "answer": self._health_chat(question, selected_language, health_topic),
+                "sources": [],
+                "language": selected_language,
+                "mode": "health",
+                "prototype": True,
+            }
         try:
             embedding_hf, chat_hf, index = self._clients()
             sources = self._retrieve(embedding_hf, index, question)
