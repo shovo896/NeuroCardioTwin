@@ -14,6 +14,11 @@ window.NCTChat = (() => {
     $('chat-launcher')?.addEventListener('click', () => toggle($('research-chat')?.hidden));
     $('chat-close')?.addEventListener('click', () => toggle(false));
     $('chat-language')?.addEventListener('change', applyLanguage);
+    document.addEventListener('nct:language-change', event => {
+      const picker = $('chat-language');
+      if (picker && event.detail?.language) picker.value = event.detail.language;
+      applyLanguage();
+    });
     $('chat-form')?.addEventListener('submit', async event => {
       event.preventDefault(); const input = $('chat-input'), send = $('chat-send'), text = input?.value.trim();
       if (!text || !send) return;
