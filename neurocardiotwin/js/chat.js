@@ -12,12 +12,14 @@ window.NCTChat = (() => {
   const escape = value => { const el = document.createElement('span'); el.textContent = value || ''; return el.innerHTML.replace(/\n/g, '<br>'); };
   function append(text, kind) { const root = $('chat-messages'); if (!root) return null; const item = document.createElement('article'); item.className = `chat-message ${kind}`; item.innerHTML = escape(text); root.append(item); root.scrollTop = root.scrollHeight; return item; }
   function language() { return $('chat-language')?.value === 'bn' ? 'bn' : 'en'; }
-  function emergencyLanguage() { return window.NCTI18n?.language === 'bn' || language() === 'bn' ? 'bn' : 'en'; }
+  function emergencyLanguage() { return $('emergency-language')?.value === 'bn' ? 'bn' : 'en'; }
   function renderEmergency() {
-    const words = emergencyCopy[emergencyLanguage()], root = $('emergency-content'), title = $('emergency-title'), trigger = $('emergency-launcher');
+    const selected = emergencyLanguage(), words = emergencyCopy[selected], root = $('emergency-content'), title = $('emergency-title'), trigger = $('emergency-launcher'), kicker = $('emergency-kicker'), close = $('emergency-close');
     if (!root) return;
     if (title) title.textContent = words.title;
     if (trigger) trigger.querySelector('span').textContent = words.trigger;
+    if (kicker) kicker.textContent = selected === 'bn' ? 'জরুরি হলে এখনই পদক্ষেপ নিন' : 'ACT NOW IF URGENT';
+    if (close) close.setAttribute('aria-label', selected === 'bn' ? 'জরুরি সহায়তা বন্ধ করুন' : 'Close emergency support');
     root.innerHTML = `<p class="emergency-intro">${words.intro}</p><p class="emergency-signs">${words.signs}</p><a class="emergency-call" href="tel:999"><i class="fa-solid fa-phone-volume"></i>${words.call}</a><p class="emergency-outside">${words.outside}</p><ol>${words.steps.map(step => `<li>${step}</li>`).join('')}</ol><p class="emergency-disclaimer"><i class="fa-solid fa-shield-heart"></i>${words.disclaimer}</p>`;
   }
   function toggleEmergency(open) { const panel = $('emergency-support'), launcher = $('emergency-launcher'); if (!panel || !launcher) return; renderEmergency(); panel.hidden = !open; launcher.setAttribute('aria-expanded', String(open)); if (open) $('emergency-close')?.focus(); }
@@ -29,9 +31,12 @@ window.NCTChat = (() => {
     $('chat-language')?.addEventListener('change', applyLanguage);
     $('emergency-launcher')?.addEventListener('click', () => toggleEmergency($('emergency-support')?.hidden));
     $('emergency-close')?.addEventListener('click', () => toggleEmergency(false));
+    $('emergency-language')?.addEventListener('change', renderEmergency);
     document.addEventListener('nct:language-change', event => {
       const picker = $('chat-language');
       if (picker && event.detail?.language) picker.value = event.detail.language;
+      const emergencyPicker = $('emergency-language');
+      if (emergencyPicker && event.detail?.language) emergencyPicker.value = event.detail.language;
       applyLanguage();
       renderEmergency();
     });

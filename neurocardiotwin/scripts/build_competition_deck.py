@@ -159,25 +159,34 @@ def main():
     text(s, "Designed so researchers can explain what crosses the AI boundary—and what does not.", Inches(8.95), Inches(4.78), Inches(2.95), Inches(.43), 10.5, MUTED, False, align=PP_ALIGN.CENTER)
     footer(s, 7)
 
-    # 8 — Validation
+    # 8 — Safety escalation
+    s = make_slide(prs); title(s, "Safety escalation", "AI is not the last stop in an emergency.", "NeuroCardioTwin keeps the emergency path separate from model inference and assistant chat.")
+    card(s, "Recognise", "Visible urgent-warning panel covers chest pain or pressure, severe breathing difficulty, fainting, confusion, seizure and severe bleeding.", Inches(.72), Inches(2.35), Inches(3.72), Inches(2.55), AMBER, "!")
+    card(s, "Act", "One tap opens the phone dialler for Bangladesh National Emergency Service 999. The interface tells users not to wait for an AI reply.", Inches(4.82), Inches(2.35), Inches(3.72), Inches(2.55), RGBColor(225, 29, 72), "☎")
+    card(s, "Support", "Bilingual Bengali/English instructions: alert someone nearby, do not stay alone, keep the phone available, and avoid driving when severely unwell.", Inches(8.92), Inches(2.35), Inches(3.72), Inches(2.55), VIOLET, "✓")
+    shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.22), Inches(5.45), Inches(10.1), Inches(.6), RGBColor(63, 24, 37), True, RGBColor(180, 66, 87))
+    text(s, "Safety boundary: the app never diagnoses an emergency; it makes the fastest real-world help path obvious.", Inches(1.5), Inches(5.66), Inches(9.55), Inches(.22), 12, RGBColor(255, 218, 224), True, align=PP_ALIGN.CENTER)
+    footer(s, 8)
+
+    # 9 — Validation
     s = make_slide(prs); title(s, "What we validate", "Real model execution—not invented metrics.", "Model performance is reported from the connected backend, while the interface exposes input and runtime constraints.")
     card(s, "Input integrity", "Required sample windows, finite-value checks, sampling rate, and validated input state before inference.", Inches(.7), Inches(2.35), Inches(3.8), Inches(2.2), CYAN, "✓")
     card(s, "Operational proof", "ONNX CPU model status, output confidence, classification/forecast details, and API-backed metrics surfaces.", Inches(4.78), Inches(2.35), Inches(3.8), Inches(2.2), TEAL, "↗")
     card(s, "Evidence traceability", "Decision outputs cite approved knowledge titles, making the RAG layer inspectable by judges.", Inches(8.86), Inches(2.35), Inches(3.8), Inches(2.2), VIOLET, "#")
     text(s, "Honest claim", Inches(.72), Inches(5.23), Inches(1.8), Inches(.22), 10, AMBER, True, "Courier New")
     text(s, "This is a research prototype, not a clinical device. Its strength is a transparent, reproducible workflow—not overstated medical claims.", Inches(.72), Inches(5.55), Inches(11.1), Inches(.48), 18, WHITE, True)
-    footer(s, 8)
+    footer(s, 9)
 
-    # 9 — Impact & roadmap
+    # 10 — Impact & roadmap
     s = make_slide(prs); title(s, "Impact & next steps", "A platform designed to grow with the research community.")
     bullets(s, ["Pilot with supervised research teams using consented, de-identified signal datasets.", "Expand the approved knowledge base through clinician/researcher review workflows.", "Add calibrated model evaluation, cohort-level fairness analysis, and reproducible audit exports.", "Connect validated real-time devices only after robust signal-quality and governance testing."], Inches(.85), Inches(2.25), Inches(6.9), 14, .68)
     shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(8.25), Inches(2.25), Inches(4.0), Inches(3.4), PANEL, True, RGBColor(49, 87, 121))
     text(s, "VISION", Inches(8.55), Inches(2.57), Inches(2), Inches(.2), 10, CYAN, True, "Courier New")
     text(s, "Inclusive,\nevidence-aware\nbrain–heart AI.", Inches(8.55), Inches(3.06), Inches(3.0), Inches(1.25), 24, WHITE, True)
     text(s, "Built in Bangladesh; designed for globally responsible digital-health research.", Inches(8.55), Inches(4.86), Inches(3.0), Inches(.48), 11, GREEN, True)
-    footer(s, 9)
+    footer(s, 10)
 
-    # 10 — Closing
+    # 11 — Closing
     s = make_slide(prs)
     shape(s, MSO_SHAPE.OVAL, Inches(-1.3), Inches(3.9), Inches(4.1), Inches(4.1), RGBColor(14, 78, 94), False)
     text(s, "NEUROCARDIOTWIN", Inches(.7), Inches(1.15), Inches(6), Inches(.25), 11, CYAN, True, "Courier New")
@@ -186,7 +195,7 @@ def main():
     shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(.72), Inches(4.75), Inches(3.45), Inches(.62), TEAL)
     text(s, "Thank you  •  Questions?", Inches(.98), Inches(4.96), Inches(2.95), Inches(.23), 13, NAVY, True, align=PP_ALIGN.CENTER)
     text(s, "Live demo: neurocardiotwin.vercel.app", Inches(.72), Inches(6.25), Inches(5.4), Inches(.25), 11, CYAN, True, "Courier New")
-    footer(s, 10)
+    footer(s, 11)
     prs.save(OUT)
     print(OUT)
 
