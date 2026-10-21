@@ -25,6 +25,14 @@ SAFETY_NOTICE = (
 )
 LOGGER = logging.getLogger(__name__)
 
+CHAT_LANGUAGES = {
+    "auto": "the same language and script used by the user",
+    "en": "clear English", "bn": "clear Bangla", "hi": "Hindi", "ur": "Urdu",
+    "ar": "Arabic", "es": "Spanish", "fr": "French", "zh": "Chinese",
+    "pt": "Portuguese", "ru": "Russian", "ja": "Japanese", "ko": "Korean",
+    "ta": "Tamil", "ne": "Nepali",
+}
+
 
 @dataclass(frozen=True)
 class DecisionConfig:
@@ -339,6 +347,19 @@ class RAGDecisionService:
         return "general" if any(term in text for term in health) else None
 
     @staticmethod
+    def _fallback_language(question: str, requested_language: str) -> str:
+        """Keep no-provider fallback readable for Bangla instead of forcing English."""
+        banglish_markers = ("buke", "buk", "betha", "shash", "kharap", "matha", "jor", "kashi", "bomi", "amar", "ki korbo", "ase", "kortese")
+        if requested_language == "bn" or (
+            requested_language == "auto" and (
+                any("\u0980" <= char <= "\u09ff" for char in question)
+                or any(marker in question.casefold() for marker in banglish_markers)
+            )
+        ):
+            return "bn"
+        return "en"
+
+    @staticmethod
     def _health_fallback(question: str, language: str, topic: str) -> str:
         """Safe, question-aware continuity reply when the chat model is unavailable.
 
@@ -382,7 +403,7 @@ class RAGDecisionService:
 
     def _health_chat(self, question: str, language: str, topic: str) -> str:
         """Use the chat provider for general health education, with a safe fallback."""
-        language_instruction = "Reply in clear Bangla." if language == "bn" else "Reply in clear English."
+        language_instruction = f"Reply in {CHAT_LANGUAGES[language]}."
         system = (
             "You provide brief, supportive general health education. Do not diagnose, prescribe, give medication doses, "
             "or claim certainty. Respond directly to the user's question, ask up to two relevant follow-up questions, "
@@ -406,7 +427,7 @@ class RAGDecisionService:
             return answer.strip()[:2400]
         except Exception as exc:
             LOGGER.warning("Health chat unavailable; using question-aware safety reply (%s).", type(exc).__name__)
-            return self._health_fallback(question, language, topic)
+            return self._health_fallback(question, self._fallback_language(question, language), topic)
 
     def chat(self, message: Any, language: Any = "en") -> dict[str, Any]:
         """Answer a short authenticated workspace question using approved RAG data.
@@ -418,7 +439,9 @@ class RAGDecisionService:
             raise HTTPException(422, "Enter a question for the assistant.")
         if len(question) > 800:
             raise HTTPException(422, "Keep the question under 800 characters.")
-        selected_language = "bn" if str(language).lower() in {"bn", "bangla", "bengali"} else "en"
+        requested_language = str(language).strip().lower()
+        selected_language = "bn" if requested_language in {"bangla", "bengali"} else requested_language
+        selected_language = selected_language if selected_language in CHAT_LANGUAGES else "auto"
         health_topic = self._health_topic(question)
         if health_topic:
             return {
@@ -434,10 +457,10 @@ class RAGDecisionService:
         except Exception as exc:
             LOGGER.warning("Chat retrieval unavailable; using local approved knowledge (%s).", type(exc).__name__)
             sources = _local_sources()
-            return {"answer": self._chat_fallback(selected_language, sources, question), "sources": sources, "language": selected_language, "prototype": True}
+            return {"answer": self._chat_fallback(self._fallback_language(question, selected_language), sources, question), "sources": sources, "language": selected_language, "prototype": True}
 
         evidence = "\n\n".join(f"[{source['title']}]\n{source['excerpt']}" for source in sources)
-        language_instruction = "Reply in clear Bangla." if selected_language == "bn" else "Reply in clear English."
+        language_instruction = f"Reply in {CHAT_LANGUAGES[selected_language]}."
         system = (
             "You are NeuroCardioTwin's research assistant. Use only the approved evidence supplied. "
             "Do not diagnose, triage, prescribe, interpret an individual waveform, or claim clinical certainty. "
@@ -457,5 +480,5 @@ class RAGDecisionService:
                 raise RuntimeError("Hugging Face returned an empty chat response.")
         except Exception as exc:
             LOGGER.warning("Chat generation unavailable; using approved-knowledge reply (%s).", type(exc).__name__)
-            answer = self._chat_fallback(selected_language, sources, question)
+            answer = self._chat_fallback(self._fallback_language(question, selected_language), sources, question)
         return {"answer": answer.strip()[:2400], "sources": sources, "language": selected_language, "prototype": True}
