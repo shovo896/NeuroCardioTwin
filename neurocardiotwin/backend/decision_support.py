@@ -275,16 +275,33 @@ class RAGDecisionService:
         return {"decision": content.strip()[:2400], "sources": sources, "safety_notice": SAFETY_NOTICE, "prototype": True}
 
     @staticmethod
-    def _chat_fallback(language: str, sources: list[dict[str, str]]) -> str:
+    def _chat_fallback(language: str, sources: list[dict[str, str]], question: str) -> str:
         citations = " ".join(f"[{source['title']}]" for source in sources[:2])
+        asks_about_result = any(term in question.casefold() for term in (
+            "ecg", "eeg", "report", "result", "signal", "waveform", "রিপোর্ট", "ফলাফল", "সিগন্যাল",
+        ))
         if language == "bn":
+            if asks_about_result:
+                return (
+                    "চ্যাট থেকে আমি আপনার ব্যক্তিগত ECG/EEG report বা raw signal দেখতে পাই না। "
+                    "Arrhythmia বা Seizure Detection page-এ model run করে classification/probability, confidence এবং validated sample count দেখুন। "
+                    "এই non-identifying ফলাফল লিখলে আমি গবেষণা-ভিত্তিক ব্যাখ্যা দিতে পারি; এটি চিকিৎসা নির্ণয় নয়। "
+                    f"{citations}"
+                )
             return (
-                "আমি অনুমোদিত গবেষণা-জ্ঞানভিত্তিক সহকারী। মডেলের ফলাফল ব্যাখ্যা, "
+                f"আপনার প্রশ্নটি পেয়েছি: “{question[:160]}”। অনুমোদিত গবেষণা-জ্ঞানভিত্তিকভাবে মডেলের ফলাফল, "
                 "signal validation, বা গবেষণার পরের ধাপ সম্পর্কে প্রশ্ন করতে পারেন। "
                 f"এটি চিকিৎসা নির্ণয় বা চিকিৎসা পরামর্শ নয়। {citations}"
             )
+        if asks_about_result:
+            return (
+                "I cannot view a personal ECG/EEG report or raw waveform from this chat. "
+                "Run the model on the Arrhythmia or Seizure Detection page, then share only the classification/probability, confidence, "
+                "and validated sample count for a research-oriented explanation. This is not a diagnosis. "
+                f"{citations}"
+            )
         return (
-            "I can help explain model outputs, signal validation, and research workflow "
+            f"I received your question: “{question[:160]}”. I can help explain model outputs, signal validation, and research workflow "
             "from the approved knowledge base. This is not a diagnosis or medical advice. "
             f"{citations}"
         )
@@ -297,6 +314,8 @@ class RAGDecisionService:
             "chest pain", "chest pressure", "difficulty breathing", "shortness of breath",
             "can't breathe", "cannot breathe", "faint", "unconscious", "confusion",
             "stroke", "severe bleeding", "seizure", "self harm", "suicide",
+            "buke betha", "buk betha", "buk e betha", "buke chap", "shash nite koshto",
+            "shash korte koshto", "shashkosto", "ojnan", "khinchuni", "rokto pora",
             "বুক ব্যথ", "বুকে চাপ", "শ্বাস নিতে কষ্ট", "শ্বাসকষ্ট", "অজ্ঞান",
             "বিভ্রান্ত", "স্ট্রোক", "রক্তপাত", "খিঁচুনি", "আত্মহত্য",
         )
@@ -305,6 +324,7 @@ class RAGDecisionService:
         mood = (
             "feel bad", "feeling bad", "feel unwell", "feeling unwell", "feel sick",
             "sad", "anxious", "anxiety", "stress", "depressed", "panic",
+            "kharap lag", "mon kharap", "udbigno", "stress lag",
             "খারাপ লাগ", "মন খারাপ", "উদ্বিগ্ন", "উদ্বেগ", "চাপ লাগ", "স্ট্রেস",
         )
         if any(term in text for term in mood):
@@ -312,6 +332,7 @@ class RAGDecisionService:
         health = (
             "health", "symptom", "fever", "headache", "cough", "cold", "pain",
             "nausea", "vomit", "diarrhea", "diarrhoea", "dizzy", "weak", "medicine",
+            "jor", "matha betha", "kashi", "sordi", "bomi", "durbal", "oshudh", "shorir kharap",
             "health", "শরীর", "জ্বর", "মাথা ব্যথ", "কাশি", "সর্দি", "ব্যথা",
             "বমি", "ডায়রিয়া", "ডায়রিয়া", "ঘোর", "দুর্বল", "ওষুধ",
         )
@@ -413,7 +434,7 @@ class RAGDecisionService:
         except Exception as exc:
             LOGGER.warning("Chat retrieval unavailable; using local approved knowledge (%s).", type(exc).__name__)
             sources = _local_sources()
-            return {"answer": self._chat_fallback(selected_language, sources), "sources": sources, "language": selected_language, "prototype": True}
+            return {"answer": self._chat_fallback(selected_language, sources, question), "sources": sources, "language": selected_language, "prototype": True}
 
         evidence = "\n\n".join(f"[{source['title']}]\n{source['excerpt']}" for source in sources)
         language_instruction = "Reply in clear Bangla." if selected_language == "bn" else "Reply in clear English."
@@ -436,5 +457,5 @@ class RAGDecisionService:
                 raise RuntimeError("Hugging Face returned an empty chat response.")
         except Exception as exc:
             LOGGER.warning("Chat generation unavailable; using approved-knowledge reply (%s).", type(exc).__name__)
-            answer = self._chat_fallback(selected_language, sources)
+            answer = self._chat_fallback(selected_language, sources, question)
         return {"answer": answer.strip()[:2400], "sources": sources, "language": selected_language, "prototype": True}
