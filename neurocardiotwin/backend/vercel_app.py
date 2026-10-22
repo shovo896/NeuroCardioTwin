@@ -201,10 +201,21 @@ def metrics(request:Request):
 MODEL_SAMPLING_RATE=128.0
 MIN_INPUT_SAMPLES=128
 def sampling_rate(payload):
-    try: rate=float(payload.get('sampling_rate',MODEL_SAMPLING_RATE))
+    value=payload.get('sampling_rate',MODEL_SAMPLING_RATE)
+    # Empty form inputs are normal in the upload UI.  Treat them as the
+    # documented 128 Hz default instead of letting float('') become a 500.
+    if value in (None,''): value=MODEL_SAMPLING_RATE
+    try: rate=float(value)
     except (TypeError,ValueError): raise HTTPException(422,'sampling_rate must be a positive number.')
     if not 1<=rate<=100000: raise HTTPException(422,'sampling_rate must be between 1 and 100000 Hz.')
     return rate
+def detection_threshold(payload):
+    value=payload.get('threshold',.5)
+    if value in (None,''): value=.5
+    try: threshold=float(value)
+    except (TypeError,ValueError): raise HTTPException(422,'threshold must be a number between 0.05 and 0.95.')
+    if not .05<=threshold<=.95: raise HTTPException(422,'threshold must be between 0.05 and 0.95.')
+    return threshold
 def norm(x,n,rate=MODEL_SAMPLING_RATE):
     x=np.asarray(x,dtype=np.float32).reshape(-1)
     if x.size<MIN_INPUT_SAMPLES or not np.isfinite(x).all():raise HTTPException(422,f'Provide at least {MIN_INPUT_SAMPLES} finite signal samples.')
@@ -232,15 +243,15 @@ def run(name,x):return sessions[name].run(None,{'signal':x.astype(np.float32)})[
 async def seizure(request:Request):
     identity=require_workspace_access(request)
     if sessions.get('seizure') is None:raise HTTPException(503,'Seizure model unavailable')
-    x,b=await payload(request,512,'eeg_file');p=float(1/(1+np.exp(-run('seizure',x[None,None])[0])));t=float(b.get('threshold',.5));rate=sampling_rate(b)
+    x,b=await payload(request,512,'eeg_file');p=float(1/(1+np.exp(-run('seizure',x[None,None])[0])));t=detection_threshold(b);rate=sampling_rate(b)
     result={'session_id':b.get('session_id','local'),'detected':p>=t,'probability':p,'threshold':t,'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
     return await attach_integrated_decision(identity,'seizure',result)
 @app.post('/api/analyze/arrhythmia')
 async def arrhythmia(request:Request):
     identity=require_workspace_access(request)
     if sessions.get('arrhythmia') is None:raise HTTPException(503,'Arrhythmia model unavailable')
-    x,b=await payload(request,180,'ecg_file');p=float(1/(1+np.exp(-run('arrhythmia',x[None,None])[0])));rate=sampling_rate(b)
-    result={'session_id':b.get('session_id','local'),'classification':'Abnormal beat' if p>=.5 else 'Normal beat','confidence':max(p,1-p),'abnormal_probability':p,'markers':[],'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
+    x,b=await payload(request,180,'ecg_file');p=float(1/(1+np.exp(-run('arrhythmia',x[None,None])[0])));rate=sampling_rate(b);t=detection_threshold(b)
+    result={'session_id':b.get('session_id','local'),'classification':'Abnormal beat' if p>=t else 'Normal beat','confidence':max(p,1-p),'abnormal_probability':p,'markers':[],'processed_signal':x.tolist(),'input_quality':input_quality(x,rate),'prototype':True}
     return await attach_integrated_decision(identity,'arrhythmia',result)
 @app.post('/api/analyze/forecast')
 async def forecast(request:Request):
