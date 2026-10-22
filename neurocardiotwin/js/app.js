@@ -209,15 +209,6 @@ window.App = (() => {
       const status = await API.decisionStatus(); renderKnowledgeAdmin(status);
     } catch { /* The local model result remains available if status cannot load. */ }
   }
-  async function bootstrap(signals) {
-    const [seizure, arrhythmia] = await Promise.allSettled([
-      API.analyzeParameters('seizure', { session_id: 'eeg-input-001', threshold: .5, sampling_rate: 128, signal_values: signals.eeg.slice(0, 512) }),
-      API.analyzeParameters('arrhythmia', { session_id: 'ecg-input-001', sampling_rate: 128, signal_values: signals.ecg.slice(0, 180) })
-    ]);
-    if (seizure.status === 'fulfilled') handleAnalysis('seizure', seizure.value, false);
-    if (arrhythmia.status === 'fulfilled') handleAnalysis('arrhythmia', arrhythmia.value, false);
-    Forecast.run();
-  }
   async function init(event) {
     Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindIntegratedDecisionSurfaces();
     renderProfile(event?.detail); bindProfileControls();
@@ -225,7 +216,7 @@ window.App = (() => {
     try {
       const response = await fetch('data/demo-signals.json'); if (!response.ok) throw Error();
       const data = await response.json(); eeg = repeat(data.eeg, 512); ecg = Charts.makeECG(320);
-      const signals = { ...data, eeg, ecg }; Charts.init(signals); await Forecast.init(signals); bootstrap(signals);
+      const signals = { ...data, eeg, ecg }; Charts.init(signals); await Forecast.init(signals);
     } catch { $('toast').textContent = 'Signal input could not load. Use a local HTTP server.'; $('toast').classList.add('show'); }
   }
   document.addEventListener('nct:authenticated', init, { once: true });

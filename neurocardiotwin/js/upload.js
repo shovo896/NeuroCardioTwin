@@ -66,6 +66,15 @@ window.Upload=(()=>{
   }
   function init(){
     addCompleteControl();
+    // Actual user input is the safe default.  Bundled signals remain
+    // available only after the user explicitly selects Demo workspace.
+    const uploadMode=document.querySelector('.mode-option[data-input-mode="upload"]');
+    document.querySelectorAll('.mode-option').forEach(item=>{
+      const active=item===uploadMode;
+      item.classList.toggle('active',active);
+      item.setAttribute('aria-checked',String(active));
+    });
+    mode('upload');
     ['ecg','eeg'].forEach(type=>$(type+'-file').addEventListener('change',event=>{const files=event.target.files,ok=[...files].every(file=>allowed[type].includes(file.name.split('.').pop().toLowerCase()));$(type+'-file-name').textContent=files.length?[...files].map(file=>file.name).join(', '):'No file selected';if(!ok)msg('Unsupported file format.')}));
     $('analysis-mode').onchange=req;
     $('sensor-start').onclick=()=>{sensor=true;$('sensor-status').className='tag';$('sensor-status').innerHTML='<i class="fa-solid fa-circle"></i> Stream active';$('sensor-start').innerHTML='<i class="fa-solid fa-rotate"></i> Restart stream';if(!$('upload-session').value)$('upload-session').value='sensor-input-'+Date.now().toString().slice(-6);if(!$('sample-rate').value)$('sample-rate').value='128';msg('Sensor input is active. Analyse the waveform now.',true)};
