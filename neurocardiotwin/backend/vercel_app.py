@@ -71,7 +71,11 @@ async def update_current_user(request:Request):
     except ValueError as exc:
         raise HTTPException(422,str(exc)) from exc
     except RuntimeError as exc:
-        raise HTTPException(503,'Profile saving is not configured. Apply the private profile preferences migration.') from exc
+        # A missing table is actionable for the project owner; other service
+        # failures must not be misreported as a migration problem.
+        if '(404)' in str(exc):
+            raise HTTPException(503,'Profile storage table is missing. Run migration 0002_private_profile_preferences.sql in the Supabase project configured on Vercel.') from exc
+        raise HTTPException(503,'Profile storage is temporarily unavailable. Verify the Vercel Supabase URL and service-role key.') from exc
     return profile
 def require_workspace_access(request:Request):
     """Every workspace/model endpoint requires the same verified MCP user token."""
@@ -184,7 +188,9 @@ def private_history(request:Request,limit:int=20):
     try:
         return {'items':store.private_history(identity,limit)}
     except RuntimeError as exc:
-        raise HTTPException(503,'Private history is not configured. Apply the supplied Supabase migration.') from exc
+        if '(404)' in str(exc):
+            raise HTTPException(503,'Private history table is missing. Run migration 0001_private_analysis_history.sql in the Supabase project configured on Vercel.') from exc
+        raise HTTPException(503,'Private history storage is temporarily unavailable. Verify the Vercel Supabase URL and service-role key.') from exc
 
 @app.get('/api/models/status')
 def status(request:Request):
