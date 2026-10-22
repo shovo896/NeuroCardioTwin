@@ -10,7 +10,15 @@ window.Upload=(()=>{
   function mode(inputMode){
     $('file-inputs').classList.toggle('hidden',inputMode==='parameters'||inputMode==='sensor');$('parameter-inputs').classList.toggle('hidden',inputMode!=='parameters');$('sensor-inputs').classList.toggle('hidden',inputMode!=='sensor');
     $('analysis-submit').innerHTML=inputMode==='sensor'?'<i class="fa-solid fa-play"></i> Analyse sensor stream':inputMode==='demo'?'<i class="fa-solid fa-wave-square"></i> Run baseline analysis':'<i class="fa-solid fa-microscope"></i> Run model detection';
-    $('mode-label').innerHTML=inputMode==='sensor'?'<i class="fa-solid fa-tower-broadcast"></i> Sensor input':inputMode==='parameters'?'<i class="fa-solid fa-sliders"></i> Manual parameters':inputMode==='upload'?'<i class="fa-solid fa-file-arrow-up"></i> Signal upload':'<i class="fa-solid fa-circle-check"></i> System input';req();
+    $('mode-label').innerHTML=inputMode==='sensor'?'<i class="fa-solid fa-tower-broadcast"></i> Sensor input':inputMode==='parameters'?'<i class="fa-solid fa-sliders"></i> Manual parameters':inputMode==='upload'?'<i class="fa-solid fa-file-arrow-up"></i> Signal upload':'<i class="fa-solid fa-circle-check"></i> System input';
+    const complete=$('complete-analysis');
+    if(complete){
+      complete.disabled=inputMode==='parameters';
+      $('complete-analysis-hint').textContent=inputMode==='parameters'
+        ?'Complete analysis needs paired ECG and EEG inputs. Choose Demo workspace, Upload signal, or Sensor demo.'
+        :'Runs seizure detection, arrhythmia classification, and joint ECG–EEG forecasting sequentially. Upload mode requires both one-column CSV files.';
+    }
+    req();
   }
   function manual(){const values=$('signal-values').value.trim().split(/[\s,;]+/).filter(Boolean).map(Number),n=samples[selected()];if(!values.length||values.some(x=>!Number.isFinite(x)))throw Error('Paste numeric signal values only');if(values.length<n)throw Error(`At least ${n} samples are required; received ${values.length}`);return values}
   function inputStream(channel,amount){const base=channel==='eeg'?window.App.sensorEeg():window.App.sensorEcg();if(!base?.length)throw Error('Signal input is still loading. Try again in a moment.');return Array.from({length:amount},(_,i)=>base[i%base.length])}
@@ -24,12 +32,49 @@ window.Upload=(()=>{
     if(inputMode==='sensor'&&!sensor)throw Error('Start the sensor stream first');
     return API.analyzeParameters('forecast',forecastPayload(inputMode==='sensor'?'sensor-forecast':'baseline-forecast',inputStream('ecg',256),inputStream('eeg',256)));
   }
+  async function pairedInputs(inputMode){
+    if(inputMode==='parameters')throw Error('Complete analysis requires paired ECG and EEG inputs. Choose Demo workspace, Upload signal, or Sensor demo.');
+    if(inputMode==='upload')return {source:'uploaded-complete',ecg:await csvValues($('ecg-file').files[0],256,'ECG'),eeg:await csvValues($('eeg-file').files[0],512,'EEG')};
+    if(inputMode==='sensor'&&!sensor)throw Error('Start the sensor stream first');
+    return {source:inputMode==='sensor'?'sensor-complete':'baseline-complete',ecg:inputStream('ecg',256),eeg:inputStream('eeg',512)};
+  }
+  async function runCompleteAnalysis(inputMode){
+    const inputs=await pairedInputs(inputMode),session=$('upload-session').value||inputs.source;
+    msg('Running seizure detection (1 of 3)…',true);
+    const seizure=await API.analyzeParameters('seizure',{...payload(inputs.eeg,`${session}-eeg`),session_id:`${session}-eeg`});
+    window.App.handleAnalysis('seizure',seizure,false);
+    msg('Running arrhythmia classification (2 of 3)…',true);
+    const arrhythmia=await API.analyzeParameters('arrhythmia',{...payload(inputs.ecg,`${session}-ecg`),session_id:`${session}-ecg`});
+    window.App.handleAnalysis('arrhythmia',arrhythmia,false);
+    msg('Running joint ECG–EEG forecasting (3 of 3)…',true);
+    const forecast=await API.analyzeParameters('forecast',forecastPayload(`${session}-forecast`,inputs.ecg,inputs.eeg));
+    window.App.handleAnalysis('forecast',forecast,true);
+    msg(`Complete analysis finished: seizure, arrhythmia, and ECG–EEG forecast are ready at ${rate()} Hz.`,true);
+  }
   async function refreshForecastCapability(){const option=$('analysis-mode').querySelector('option[value="forecast"]');try{const capability=(await API.capabilities()).forecast;option.disabled=!capability?.available;option.textContent=capability?.available?'ECG–EEG forecasting':'ECG–EEG forecasting (model offline)'}catch{option.disabled=true;option.textContent='ECG–EEG forecasting (model offline)'}}
+  function addCompleteControl(){
+    const actions=document.querySelector('#upload-form .form-actions');
+    if(!actions||$('complete-analysis'))return;
+    const button=document.createElement('button');
+    button.type='button';button.id='complete-analysis';button.className='secondary-button';
+    button.innerHTML='<i class="fa-solid fa-layer-group"></i> Run complete EEG + ECG analysis';
+    actions.insertBefore(button,$('upload-progress'));
+    const hint=document.createElement('p');
+    hint.id='complete-analysis-hint';hint.className='field-hint';
+    hint.textContent='Runs seizure detection, arrhythmia classification, and joint ECG–EEG forecasting sequentially. Upload mode requires both one-column CSV files.';
+    actions.insertAdjacentElement('afterend',hint);
+  }
   function init(){
+    addCompleteControl();
     ['ecg','eeg'].forEach(type=>$(type+'-file').addEventListener('change',event=>{const files=event.target.files,ok=[...files].every(file=>allowed[type].includes(file.name.split('.').pop().toLowerCase()));$(type+'-file-name').textContent=files.length?[...files].map(file=>file.name).join(', '):'No file selected';if(!ok)msg('Unsupported file format.')}));
     $('analysis-mode').onchange=req;
     $('sensor-start').onclick=()=>{sensor=true;$('sensor-status').className='tag';$('sensor-status').innerHTML='<i class="fa-solid fa-circle"></i> Stream active';$('sensor-start').innerHTML='<i class="fa-solid fa-rotate"></i> Restart stream';if(!$('upload-session').value)$('upload-session').value='sensor-input-'+Date.now().toString().slice(-6);if(!$('sample-rate').value)$('sample-rate').value='128';msg('Sensor input is active. Analyse the waveform now.',true)};
     document.querySelectorAll('.mode-option').forEach(button=>button.onclick=()=>{document.querySelectorAll('.mode-option').forEach(item=>{item.classList.remove('active');item.setAttribute('aria-checked','false')});button.classList.add('active');button.setAttribute('aria-checked','true');mode(button.dataset.inputMode);msg(button.dataset.inputMode==='sensor'?'Start the sensor stream, then run detection.':button.dataset.inputMode==='parameters'?'Paste waveform samples, then run detection.':button.dataset.inputMode==='demo'?'Validated EEG/ECG input is ready. Choose a model and run it.':'',true)});
+    $('complete-analysis').onclick=async()=>{
+      const inputMode=document.querySelector('.mode-option.active').dataset.inputMode,complete=$('complete-analysis'),single=$('analysis-submit');
+      $('upload-progress').classList.remove('hidden');complete.disabled=true;single.disabled=true;
+      try{await runCompleteAnalysis(inputMode)}catch(error){msg('Complete analysis was not completed: '+error.message)}finally{$('upload-progress').classList.add('hidden');complete.disabled=inputMode==='parameters';single.disabled=false}
+    };
     $('upload-form').onsubmit=async event=>{event.preventDefault();const inputMode=document.querySelector('.mode-option.active').dataset.inputMode,kind=selected();$('upload-progress').classList.remove('hidden');try{let result;if(kind==='forecast')result=await runForecast(inputMode);else if(inputMode==='parameters')result=await API.analyzeParameters(kind,payload(manual(),'manual-input'));else if(inputMode==='sensor'){if(!sensor)throw Error('Start the sensor stream first');result=await API.analyzeParameters(kind,payload(inputStream(kind==='seizure'?'eeg':'ecg',samples[kind]),'sensor-input'))}else if(inputMode==='demo')result=await API.analyzeParameters(kind,payload(inputStream(kind==='seizure'?'eeg':'ecg',samples[kind]),'baseline-input'));else{const file=kind==='seizure'?$('eeg-file').files[0]:$('ecg-file').files[0];if(!file)throw Error('Select the required signal file');const form=new FormData();form.append(kind==='seizure'?'eeg_file':'ecg_file',file);form.append('session_id',$('upload-session').value);form.append('threshold',threshold());form.append('sampling_rate',rate());result=await API.analyze(kind,form)}window.App.handleAnalysis(kind,result);msg(`Model result received. ${rate()} Hz source input was converted to the model's 128 Hz time base.`,true)}catch(error){msg('Detection was not completed: '+error.message)}finally{$('upload-progress').classList.add('hidden')}};
     req();refreshForecastCapability();
   }
