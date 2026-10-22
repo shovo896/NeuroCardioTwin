@@ -48,12 +48,19 @@ def current_user(request:Request):
     memberships=[]
     try:
         profile=store.workspace_profile(identity)
+    except RuntimeError:
+        # Keep the workspace available if optional storage is unavailable.
+        pass
+    try:
         saved_profile=store.profile(identity.subject)
         memberships=store.memberships(saved_profile.get('id') if saved_profile else None)
+    except RuntimeError:
+        # Organisation tables are optional for the personal workspace.
+        pass
+    try:
         store.audit(identity,'profile.session_verified',{'surface':'web'})
     except RuntimeError:
-        # Keep the workspace available to an authenticated user; persistence
-        # will be retried on the next authenticated request.
+        # Auditing must not block a verified user from accessing their profile.
         pass
     return {**profile,'memberships':memberships}
 
