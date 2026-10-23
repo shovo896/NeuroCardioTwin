@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="NeuroCardioTwin public technical brief and live system documentation.">
+  <title>NeuroCardioTwin | Documentation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@400;500&family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css">
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/docs.css">
+</head>
+<body class="docs-body">
+  <header class="docs-header">
+    <a class="docs-brand" href="../"><span class="brand-mark"><i class="fa-solid fa-wave-square"></i></span><span>Neuro<span>Cardio</span>Twin<small>AI DIGITAL TWIN SYSTEM</small></span></a>
+    <nav aria-label="Documentation navigation">
+      <a href="#architecture">Architecture</a><a href="#models">Models</a><a href="#trust">Trust &amp; Safety</a><a href="#api">APIs</a>
+    </nav>
+    <a class="docs-workspace" href="../"><i class="fa-solid fa-arrow-right-to-bracket"></i> Open workspace</a>
+  </header>
+
+  <main>
+    <section class="docs-hero" aria-labelledby="docs-title">
+      <div>
+        <p class="eyebrow">PUBLIC TECHNICAL BRIEF · RESEARCH PROTOTYPE</p>
+        <h1 id="docs-title">Secure, evidence-grounded <em>brain–heart AI.</em></h1>
+        <p>NeuroCardioTwin is an AI-native research decision-support workflow for validated EEG and ECG time-series analysis. It separates biomedical inference from language generation, protects private data, and supports English, Bangla, and Banglish interaction.</p>
+        <div class="docs-actions"><a class="primary-button" href="../"><i class="fa-solid fa-play"></i> View live demo</a><a class="secondary-button" href="../NeuroCardioTwin_Full_Technical_Presentation.pptx"><i class="fa-solid fa-file-powerpoint"></i> Technical deck</a></div>
+      </div>
+      <aside class="docs-live-card" aria-live="polite">
+        <div class="live-card-heading"><span class="status-dot neutral" id="docs-live-dot"></span><span>LIVE SYSTEM STATUS</span></div>
+        <dl>
+          <div><dt>Inference runtime</dt><dd id="docs-runtime">Checking…</dd></div>
+          <div><dt>Available ONNX models</dt><dd id="docs-model-count">Checking…</dd></div>
+          <div><dt>Private data layer</dt><dd id="docs-storage-status">Checking…</dd></div>
+          <div><dt>Protected MCP services</dt><dd id="docs-mcp-count">Checking…</dd></div>
+        </dl>
+        <p id="docs-last-updated">Loading public operational data…</p>
+      </aside>
+    </section>
+
+    <section class="docs-section" id="solution">
+      <div class="section-intro"><p class="eyebrow">THE SOLUTION</p><h2>One responsible workflow, from signal to explanation.</h2><p>Users upload or enter numerical signals; the backend validates them before the appropriate local model runs. The explanation layer can only receive compact model metadata and approved research evidence—not raw waveform data.</p></div>
+      <div class="docs-steps">
+        <article><span>01</span><i class="fa-solid fa-file-waveform"></i><h3>Validate input</h3><p>Check numeric values, sampling rate, signal length and model compatibility.</p></article>
+        <article><span>02</span><i class="fa-solid fa-microchip"></i><h3>Infer locally</h3><p>Run the selected ONNX checkpoint through ONNX Runtime on the backend.</p></article>
+        <article><span>03</span><i class="fa-solid fa-book-open-reader"></i><h3>Retrieve evidence</h3><p>Retrieve relevant approved knowledge using semantic vector search.</p></article>
+        <article><span>04</span><i class="fa-solid fa-language"></i><h3>Explain safely</h3><p>Present a grounded research explanation in the user’s selected language.</p></article>
+      </div>
+    </section>
+
+    <section class="docs-section" id="architecture">
+      <div class="section-intro"><p class="eyebrow">SYSTEM ARCHITECTURE</p><h2>Clear separation of inference, retrieval, and private data.</h2></div>
+      <div class="architecture-flow" role="img" aria-label="User input flows through validation and ONNX inference, then filtered metadata flows to retrieval and explanation. Private records remain in Supabase.">
+        <article><i class="fa-solid fa-user-shield"></i><strong>User workspace</strong><small>English · বাংলা · Banglish</small></article><span class="flow-arrow">→</span>
+        <article><i class="fa-solid fa-filter-circle-dollar"></i><strong>Validation layer</strong><small>Numeric · rate · length</small></article><span class="flow-arrow">→</span>
+        <article class="accent"><i class="fa-solid fa-microchip"></i><strong>ONNX Runtime</strong><small>Local model inference</small></article><span class="flow-arrow">→</span>
+        <article><i class="fa-solid fa-vector-square"></i><strong>RAG evidence</strong><small>HF embeddings · Pinecone</small></article><span class="flow-arrow">→</span>
+        <article><i class="fa-solid fa-message"></i><strong>Safe explanation</strong><small>Qwen language model</small></article>
+      </div>
+      <div class="docs-two-col">
+        <article class="docs-panel"><p class="eyebrow">IDENTITY &amp; ACCESS</p><h3>Auth0 OAuth 2.0 + OIDC</h3><p>Auth0 verifies identity and issues scoped access tokens. The backend validates JWT signature, issuer, audience and expiry before protected workspace, profile, history, decision-support or MCP access.</p></article>
+        <article class="docs-panel"><p class="eyebrow">PRIVATE DATA</p><h3>Supabase + Row Level Security</h3><p>Profile preferences and analysis metadata are stored server-side. Row Level Security and server-side identity filtering prevent one user from reading another user’s private records.</p></article>
+      </div>
+    </section>
+
+    <section class="docs-section" id="models">
+      <div class="section-intro"><p class="eyebrow">BIOMEDICAL MODEL LAYER</p><h2>Three purpose-specific ONNX model paths.</h2><p>The language model does not generate biomedical predictions. Local ONNX checkpoints produce model outputs; RAG supports their research interpretation.</p></div>
+      <div class="model-grid">
+        <article class="docs-panel"><i class="fa-solid fa-brain card-icon"></i><h3>EEG seizure-pattern detection</h3><p><b>Input:</b> validated EEG time window<br><b>Output:</b> pattern probability, threshold comparison and detected windows when present.</p></article>
+        <article class="docs-panel"><i class="fa-solid fa-heart-pulse card-icon"></i><h3>ECG arrhythmia classification</h3><p><b>Input:</b> validated ECG time window<br><b>Output:</b> rhythm class, confidence and model-specific markers.</p></article>
+        <article class="docs-panel"><i class="fa-solid fa-chart-line card-icon"></i><h3>ECG–EEG forecasting</h3><p><b>Input:</b> paired validated ECG and EEG windows<br><b>Output:</b> next-window forecast, error metrics and trajectory views when available.</p></article>
+      </div>
+      <aside class="research-boundary"><i class="fa-solid fa-triangle-exclamation"></i><p><strong>Research boundary:</strong> NeuroCardioTwin is a research-support prototype, not a medical device and not a replacement for clinical diagnosis, triage or treatment.</p></aside>
+    </section>
+
+    <section class="docs-section" id="rag">
+      <div class="section-intro"><p class="eyebrow">RAG-GROUNDED DECISION SUPPORT</p><h2>Evidence is retrieved before language is generated.</h2></div>
+      <div class="rag-grid">
+        <article><span class="rag-number">1</span><h3>Minimal metadata</h3><p>Only analysis type, model label, confidence, threshold, validation status and session label are compacted.</p></article>
+        <article><span class="rag-number">2</span><h3>Semantic retrieval</h3><p>Hugging Face creates embeddings; Pinecone retrieves the top relevant approved knowledge excerpts by cosine similarity.</p></article>
+        <article><span class="rag-number">3</span><h3>Bounded explanation</h3><p>Qwen receives the local result plus retrieved evidence to give a concise, grounded explanation with safe next steps.</p></article>
+      </div>
+      <div class="privacy-callout"><i class="fa-solid fa-user-lock"></i><div><h3>Privacy boundary</h3><p>Raw EEG/ECG arrays, uploads, email addresses, Auth0 identifiers and access tokens are excluded from vector retrieval, prompts and decision history. The LLM explains model output; it never receives the patient waveform.</p></div></div>
+    </section>
+
+    <section class="docs-section" id="trust">
+      <div class="section-intro"><p class="eyebrow">TRUST, ACCESSIBILITY &amp; SAFETY</p><h2>Designed for understandable and responsible research use.</h2></div>
+      <div class="trust-grid">
+        <article><i class="fa-solid fa-language"></i><h3>Multilingual interaction</h3><p>English, Bangla, Banglish and additional chat languages reduce access barriers for diverse users.</p></article>
+        <article><i class="fa-solid fa-shield-halved"></i><h3>Fail-closed access</h3><p>Protected APIs and MCP services require verified Auth0 bearer tokens; unavailable services do not expose private data.</p></article>
+        <article><i class="fa-solid fa-truck-medical"></i><h3>Urgent-symptom guidance</h3><p>For emergency warning signs, the interface prioritizes immediate help guidance and displays Bangladesh emergency service 999.</p></article>
+      </div>
+    </section>
+
+    <section class="docs-section" id="api">
+      <div class="section-intro"><p class="eyebrow">INTEGRATION SURFACE</p><h2>Protected APIs and least-privilege MCP services.</h2><p>Browser authentication and the project’s independent Python verifier both exercise the same protected MCP contracts. No MCP tool returns raw physiological signals.</p></div>
+      <div class="api-grid">
+        <article class="docs-panel"><h3><code>/mcp/workspace</code></h3><p>Private profile, analysis history and workspace-security context.</p><ul><li>get_my_profile</li><li>get_private_history</li><li>get_workspace_security</li></ul></article>
+        <article class="docs-panel"><h3><code>/mcp/knowledge</code></h3><p>Approved knowledge catalogue, evidence search and RAG readiness.</p><ul><li>get_knowledge_catalog</li><li>search_approved_knowledge</li><li>get_rag_status</li></ul></article>
+        <article class="docs-panel"><h3><code>/mcp/models</code></h3><p>Safe model status, capabilities and metrics observability.</p><ul><li>get_model_status</li><li>get_model_capabilities</li><li>get_model_metrics</li></ul></article>
+      </div>
+      <p class="api-note"><i class="fa-solid fa-lock"></i> All MCP endpoints use authenticated JSON-RPC over HTTP and require the <code>mcp:read</code> permission.</p>
+    </section>
+
+    <section class="docs-section docs-cta"><p class="eyebrow">DEMO READY</p><h2>Explore the protected workspace.</h2><p>Sign in to upload a validated signal, inspect an ONNX model result, and view private history. Use demo data only for demonstration—not clinical decisions.</p><a class="primary-button" href="../"><i class="fa-solid fa-arrow-right"></i> Open NeuroCardioTwin</a></section>
+  </main>
+  <footer class="docs-footer"><span>NeuroCardioTwin · AI-powered Brain–Heart Digital Twin System</span><span>Public documentation · Last updated from the deployed service</span></footer>
+  <script src="../js/docs.js"></script>
+</body>
+</html>

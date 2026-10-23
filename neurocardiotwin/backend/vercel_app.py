@@ -8,7 +8,7 @@ from fastapi.staticfiles import StaticFiles
 from backend.security import MCP_SCOPES, auth0_ready, mcp_resource, mcp_unauthorized_headers, store, verify_bearer
 from backend.decision_support import DecisionConfig, RAGDecisionService, compact_analysis
 from starlette.concurrency import run_in_threadpool
-ROOT=Path(__file__).resolve().parents[1];app=FastAPI(title='NeuroCardioTwin');sessions={}
+ROOT=Path(__file__).resolve().parents[1];app=FastAPI(title='NeuroCardioTwin',docs_url='/api/reference',redoc_url=None);sessions={}
 def start():
     for n in ('seizure','arrhythmia','forecast'):
         p=ROOT/'models'/n/'best_fp32.onnx';sessions[n]=ort.InferenceSession(str(p),providers=['CPUExecutionProvider']) if p.exists() else None
@@ -21,6 +21,21 @@ def health(request:Request):
 @app.get('/api/security/status')
 def security_status():
     return {'supabase':{'configured':store.configured},'auth0':{'configured':auth0_ready()},'mcp':{'enabled':store.configured and auth0_ready()}}
+
+@app.get('/api/docs/status')
+def docs_status():
+    """Public, non-sensitive operational data for the live project brief.
+
+    This endpoint intentionally exposes capability booleans only.  It does
+    not reveal user data, credentials, model outputs, or raw signal samples.
+    """
+    return {
+        'models': {name: session is not None for name, session in sessions.items()},
+        'runtime': 'onnx-cpu',
+        'auth0_configured': auth0_ready(),
+        'private_storage_configured': store.configured,
+        'mcp_services': ['workspace', 'knowledge', 'models'] if (store.configured and auth0_ready()) else [],
+    }
 @app.get('/api/auth/config')
 def auth_config():
     """Public OAuth values for the browser PKCE flow; no credential is returned."""
@@ -438,4 +453,8 @@ async def mcp(request:Request):
     return await mcp_server(request,'legacy')
 @app.get('/')
 def home():return FileResponse(ROOT/'index.html')
+@app.get('/docs')
+def public_docs():
+    """Serve the public technical brief without requiring workspace sign-in."""
+    return FileResponse(ROOT/'docs'/'index.html')
 app.mount('/',StaticFiles(directory=str(ROOT),html=True),name='static')

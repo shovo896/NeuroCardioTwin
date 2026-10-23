@@ -2,6 +2,15 @@
 
 A build-free HTML/CSS/JavaScript research dashboard for EEG/ECG workflows. It is explicitly not a medical device.
 
+## Public technical documentation
+
+The deployed public project brief is available at `/docs` (for example,
+`https://neurocardiotwin.vercel.app/docs`). It documents the signal-to-ONNX
+workflow, RAG privacy boundary, Auth0/Supabase access control, protected MCP
+services and research-use safety constraints. Its live status card reads only
+the public `/api/docs/status` capability endpoint; it never exposes private
+profiles, raw waveforms or credentials.
+
 ## CPU-first training pipeline
 
 This i5/16 GB RAM-compatible starter downloads a bounded subset (ten MIT-BIH Arrhythmia records and six MIT-BIH Polysomnographic records with simultaneous ECG and EEG). Downloads resume from partial files. It deliberately uses record-level train/validation/test splits, but this remains a local research baseline—not a publishable or clinical validation.
