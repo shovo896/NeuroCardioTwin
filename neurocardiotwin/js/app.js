@@ -212,7 +212,7 @@ window.App = (() => {
   async function init(event) {
     Navigation.init(); Upload.init(); Dashboard.init(); Twin.init(); presentationCopy(); bindIntegratedDecisionSurfaces();
     renderProfile(event?.detail); bindProfileControls();
-    await Promise.all([loadDecisionStatus(), loadPrivateHistory()]);
+    await Promise.all([loadDecisionStatus(), loadPrivateHistory(), window.MCPClient?.discover?.().catch(() => null)]);
     try {
       const response = await fetch('data/demo-signals.json'); if (!response.ok) throw Error();
       const data = await response.json(); eeg = repeat(data.eeg, 512); ecg = Charts.makeECG(320);

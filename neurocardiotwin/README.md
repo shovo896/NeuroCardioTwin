@@ -58,6 +58,8 @@ The protected-resource metadata endpoints are `/.well-known/oauth-protected-reso
 NCT_MCP_ACCESS_TOKEN='<access token>' .venv/bin/python scripts/check_mcp_servers.py --call-safe-tool
 ```
 
+The protected web workspace also uses `js/mcp-client.js` to perform authenticated MCP discovery against all three services after sign-in. The browser client and the independent Python verifier exercise the same MCP contracts without sending raw signal data.
+
 ### Public standard-user tier
 
 For self-service sign-up, configure an Auth0 Login / Post Login Action with this
