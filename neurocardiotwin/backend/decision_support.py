@@ -111,7 +111,8 @@ def compact_analysis(analysis_type: str, model_result: dict[str, Any]) -> dict[s
     """Whitelist a model summary so waveform arrays can never cross the boundary."""
     if analysis_type not in {"seizure", "arrhythmia", "forecast"}:
         raise HTTPException(422, "Unsupported analysis type.")
-    quality = model_result.get("input_quality") if isinstance(model_result.get("input_quality"), dict) else {}
+    raw_quality = model_result.get("input_quality")
+    quality: dict[str, Any] = raw_quality if isinstance(raw_quality, dict) else {}
     clean: dict[str, Any] = {
         "analysis_type": analysis_type,
         "session_id": str(model_result.get("session_id", "local"))[:80],
@@ -232,20 +233,21 @@ class RAGDecisionService:
         )
         try:
             embedding_hf, chat_hf, index = self._clients()
-            sources = self._retrieve(embedding_hf, index, query)
-        except RuntimeError as exc:
-            if "No approved knowledge was retrieved" in str(exc):
-                try:
-                    # First-use bootstrap: only reviewed local knowledge is
-                    # upserted; no user data or waveform is ever indexed.
-                    self.reindex()
-                    sources = self._retrieve(embedding_hf, index, query)
-                except Exception as retry_exc:
-                    LOGGER.warning("RAG bootstrap unavailable; using local approved knowledge (%s).", type(retry_exc).__name__)
+            try:
+                sources = self._retrieve(embedding_hf, index, query)
+            except RuntimeError as exc:
+                if "No approved knowledge was retrieved" in str(exc):
+                    try:
+                        # First-use bootstrap: only reviewed local knowledge is
+                        # upserted; no user data or waveform is ever indexed.
+                        self.reindex()
+                        sources = self._retrieve(embedding_hf, index, query)
+                    except Exception as retry_exc:
+                        LOGGER.warning("RAG bootstrap unavailable; using local approved knowledge (%s).", type(retry_exc).__name__)
+                        sources = _local_sources()
+                else:
+                    LOGGER.warning("RAG retrieval unavailable; using local approved knowledge (%s).", type(exc).__name__)
                     sources = _local_sources()
-            else:
-                LOGGER.warning("RAG retrieval unavailable; using local approved knowledge (%s).", type(exc).__name__)
-                sources = _local_sources()
         except Exception as exc:
             LOGGER.warning("RAG provider unavailable; using local approved knowledge (%s).", type(exc).__name__)
             sources = _local_sources()
