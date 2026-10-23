@@ -1,4 +1,4 @@
-"""ONNX inference API plus an Auth0-protected MCP resource server."""
+"""ONNX inference API plus Auth0-protected MCP resource servers."""
 from pathlib import Path
 import json,io
 import numpy as np, onnxruntime as ort
@@ -273,7 +273,8 @@ async def forecast(request:Request):
     b=await request.json();rate=sampling_rate(b);x=np.stack((norm(b.get('ecg_values',[]),256,rate),norm(b.get('eeg_values',[]),256,rate)));p=run('forecast',x[None]);return {'session_id':b.get('session_id','local'),'forecast_horizon':64,'predicted_ecg':p[0,0].tolist(),'predicted_eeg':p[0,1].tolist(),'processed_ecg':x[0].tolist(),'processed_eeg':x[1].tolist(),'input_quality':input_quality(x,rate),'prototype':True}
 
 @app.get('/.well-known/oauth-protected-resource/mcp')
-def protected_resource_metadata():
+@app.get('/.well-known/oauth-protected-resource/mcp/{server_name}')
+def protected_resource_metadata(server_name: str | None = None):
     if not auth0_ready():
         raise HTTPException(503,'MCP authorization is not configured.')
     return {
@@ -281,14 +282,113 @@ def protected_resource_metadata():
         'authorization_servers':[f"https://{__import__('os').environ['AUTH0_DOMAIN'].strip().removeprefix('https://').rstrip('/')}"],
         'scopes_supported':list(MCP_SCOPES),
         'bearer_methods_supported':['header'],
-        'resource_name':'NeuroCardioTwin MCP'
+        'resource_name':f"NeuroCardioTwin {server_name.title() if server_name else ''} MCP".strip()
     }
 
 def mcp_error(request_id,code,message):
     return {'jsonrpc':'2.0','id':request_id,'error':{'code':code,'message':message}}
 
-@app.post('/mcp')
-async def mcp(request:Request):
+MCP_SERVER_DEFINITIONS={
+    'legacy':{
+        'name':'NeuroCardioTwin MCP',
+        'version':'1.1.0',
+        'tools':[
+            {'name':'get_my_profile','description':'Return the authenticated user\'s permitted profile fields.','inputSchema':{'type':'object','properties':{}}},
+            {'name':'get_twin_status','description':'Return model availability and safe platform status.','inputSchema':{'type':'object','properties':{}}},
+        ],
+    },
+    'workspace':{
+        'name':'NeuroCardioTwin Workspace MCP',
+        'version':'1.1.0',
+        'tools':[
+            {'name':'get_my_profile','description':'Return the authenticated user\'s permitted profile fields.','inputSchema':{'type':'object','properties':{}}},
+            {'name':'get_private_history','description':'Return compact decision history owned by the authenticated user; raw signals are excluded.','inputSchema':{'type':'object','properties':{'limit':{'type':'integer','minimum':1,'maximum':20}},'additionalProperties':False}},
+            {'name':'get_workspace_security','description':'Return privacy and authentication controls for the caller\'s workspace.','inputSchema':{'type':'object','properties':{}}},
+        ],
+    },
+    'knowledge':{
+        'name':'NeuroCardioTwin Knowledge MCP',
+        'version':'1.1.0',
+        'tools':[
+            {'name':'get_knowledge_catalog','description':'List titles of approved research knowledge documents available to RAG.','inputSchema':{'type':'object','properties':{}}},
+            {'name':'search_approved_knowledge','description':'Search only bundled approved knowledge. It never searches user profiles, history, or waveforms.','inputSchema':{'type':'object','properties':{'query':{'type':'string','minLength':2,'maxLength':160}},'required':['query'],'additionalProperties':False}},
+            {'name':'get_rag_status','description':'Return safe RAG configuration status without returning provider credentials.','inputSchema':{'type':'object','properties':{}}},
+        ],
+    },
+    'models':{
+        'name':'NeuroCardioTwin Model Operations MCP',
+        'version':'1.1.0',
+        'tools':[
+            {'name':'get_model_status','description':'Return ONNX model availability without exposing input signals.','inputSchema':{'type':'object','properties':{}}},
+            {'name':'get_model_capabilities','description':'Return supported model input sizes and forecast horizon.','inputSchema':{'type':'object','properties':{}}},
+            {'name':'get_model_metrics','description':'Return bundled evaluation metadata for loaded research models.','inputSchema':{'type':'object','properties':{}}},
+        ],
+    },
+}
+
+
+def _approved_knowledge(query: str | None = None) -> list[dict[str,str]]:
+    """Search reviewed local documents only; no user-controlled data is indexed here."""
+    documents=[]
+    terms={term.casefold() for term in (query or '').split() if len(term) > 1}
+    for path in sorted((ROOT/'knowledge').glob('*.md')):
+        content=path.read_text(encoding='utf-8').strip()
+        if not content:
+            continue
+        score=sum(content.casefold().count(term) for term in terms)
+        documents.append((score,{'id':path.stem,'title':path.stem.replace('-',' ').title(),'excerpt':content[:700]}))
+    documents.sort(key=lambda item:(-item[0],item[1]['title']))
+    return [item[1] for item in documents[:3]]
+
+
+def _model_capabilities() -> dict:
+    ready=sessions.get('forecast') is not None
+    return {
+        'seizure':{'input':'512 EEG samples','loaded':sessions.get('seizure') is not None},
+        'arrhythmia':{'input':'180 ECG samples','loaded':sessions.get('arrhythmia') is not None},
+        'forecast':{'input':'256 ECG + 256 EEG samples','forecast_horizon':64 if ready else None,'loaded':ready},
+        'raw_signal_access':'not exposed through MCP',
+    }
+
+
+def _mcp_tool_result(server_name: str, tool_name: str, arguments: dict, identity) -> dict:
+    if server_name in {'legacy','workspace'}:
+        if tool_name == 'get_my_profile':
+            profile=store.workspace_profile(identity)
+            return {key:profile.get(key) for key in ('display_name','contact_email','avatar_data')}
+        if tool_name == 'get_private_history':
+            limit=arguments.get('limit',8)
+            if not isinstance(limit,int) or isinstance(limit,bool) or not 1 <= limit <= 20:
+                raise ValueError('limit must be an integer between 1 and 20.')
+            items=store.private_history(identity,limit)
+            return {'items':[{key:item.get(key) for key in ('analysis_type','session_label','model_summary','decision_text','source_titles','created_at')} for item in items], 'raw_signal_access':'not exposed through MCP'}
+        if tool_name == 'get_workspace_security':
+            return {'auth0_token_verified':True,'required_scope':'mcp:read','private_history_server_filtered':True,'raw_signal_access':'not exposed through MCP'}
+        if server_name == 'legacy' and tool_name == 'get_twin_status':
+            return {'models':{name:model is not None for name,model in sessions.items()},'raw_signal_access':'not exposed through MCP'}
+    if server_name == 'knowledge':
+        if tool_name == 'get_knowledge_catalog':
+            sources=_approved_knowledge()
+            return {'approved_documents':[{'id':source['id'],'title':source['title']} for source in sources],'document_count':len(sources),'user_data_indexed':False}
+        if tool_name == 'search_approved_knowledge':
+            query=arguments.get('query')
+            if not isinstance(query,str) or not 2 <= len(query.strip()) <= 160:
+                raise ValueError('query must contain 2 to 160 characters.')
+            return {'query':query.strip(),'sources':_approved_knowledge(query),'scope':'approved local research knowledge only'}
+        if tool_name == 'get_rag_status':
+            config=DecisionConfig.from_environment()
+            return {'configured':config.ready,'embedding_model':config.hf_embedding_model,'chat_model':config.hf_chat_model,'vector_namespace':config.namespace,'raw_signal_access':'not exposed through MCP'}
+    if server_name == 'models':
+        if tool_name == 'get_model_status':
+            return {'models':{name:model is not None for name,model in sessions.items()},'runtime':'onnx-cpu','raw_signal_access':'not exposed through MCP'}
+        if tool_name == 'get_model_capabilities':
+            return _model_capabilities()
+        if tool_name == 'get_model_metrics':
+            return {name:json.loads(path.read_text()) if (path:=ROOT/'models'/name/'metrics.json').exists() else {} for name in sessions}
+    raise ValueError('Unknown tool.')
+
+
+async def mcp_server(request: Request, server_name: str):
     try: body=await request.json()
     except Exception:return JSONResponse(mcp_error(None,-32700,'Invalid JSON-RPC payload.'),status_code=400)
     request_id=body.get('id')
@@ -296,28 +396,46 @@ async def mcp(request:Request):
     except HTTPException as exc:
         if exc.status_code==401:return JSONResponse(mcp_error(request_id,-32001,exc.detail),status_code=401,headers=mcp_unauthorized_headers())
         return JSONResponse(mcp_error(request_id,-32003,exc.detail),status_code=exc.status_code)
+    definition=MCP_SERVER_DEFINITIONS.get(server_name)
+    if definition is None:
+        return JSONResponse(mcp_error(request_id,-32601,'Unknown MCP server.'),status_code=404)
     method=body.get('method')
     if method in ('initialize','server/discover'):
-        return {'jsonrpc':'2.0','id':request_id,'result':{'protocolVersion':'2025-06-18','serverInfo':{'name':'NeuroCardioTwin','version':'1.0.0'},'capabilities':{'tools':{}}}}
-    tools=[
-        {'name':'get_my_profile','description':'Return the authenticated user profile and role memberships.','inputSchema':{'type':'object','properties':{}}},
-        {'name':'get_twin_status','description':'Return model availability and safe platform status.','inputSchema':{'type':'object','properties':{}}},
-    ]
-    if method=='tools/list':return {'jsonrpc':'2.0','id':request_id,'result':{'tools':tools}}
+        return {'jsonrpc':'2.0','id':request_id,'result':{'protocolVersion':'2025-06-18','serverInfo':{'name':definition['name'],'version':definition['version']},'capabilities':{'tools':{}}}}
+    if method=='tools/list':return {'jsonrpc':'2.0','id':request_id,'result':{'tools':definition['tools']}}
     if method!='tools/call':return mcp_error(request_id,-32601,'Method not found.')
-    name=(body.get('params') or {}).get('name')
+    params=body.get('params') or {}; name=params.get('name'); arguments=params.get('arguments') or {}
+    if not isinstance(arguments,dict):return mcp_error(request_id,-32602,'Tool arguments must be an object.')
+    if name not in {tool['name'] for tool in definition['tools']}:
+        return mcp_error(request_id,-32602,'Unknown tool.')
     try:
-        if not store.configured:raise RuntimeError('Profile store is not configured.')
-        profile=store.upsert_profile(identity)
-        if name=='get_my_profile':
-            result={'subject':identity.subject,'email':profile.get('email'),'display_name':profile.get('display_name')}
-        elif name=='get_twin_status':
-            result={'models':{n:m is not None for n,m in sessions.items()},'raw_signal_access':'not exposed through MCP'}
-        else:return mcp_error(request_id,-32602,'Unknown tool.')
-        store.audit(identity,'mcp.tool_called',{'tool':name})
+        result=_mcp_tool_result(server_name,name,arguments,identity)
+        try:store.audit(identity,'mcp.tool_called',{'server':server_name,'tool':name})
+        except RuntimeError:pass
         return {'jsonrpc':'2.0','id':request_id,'result':{'content':[{'type':'text','text':json.dumps(result)}]}}
-    except RuntimeError as exc:
+    except (RuntimeError,ValueError) as exc:
         return {'jsonrpc':'2.0','id':request_id,'result':{'content':[{'type':'text','text':str(exc)}],'isError':True}}
+
+
+@app.post('/mcp/workspace')
+async def mcp_workspace(request:Request):
+    return await mcp_server(request,'workspace')
+
+
+@app.post('/mcp/knowledge')
+async def mcp_knowledge(request:Request):
+    return await mcp_server(request,'knowledge')
+
+
+@app.post('/mcp/models')
+async def mcp_models(request:Request):
+    return await mcp_server(request,'models')
+
+
+@app.post('/mcp')
+async def mcp(request:Request):
+    """Backward-compatible entry point for the original two MCP tools."""
+    return await mcp_server(request,'legacy')
 @app.get('/')
 def home():return FileResponse(ROOT/'index.html')
 app.mount('/',StaticFiles(directory=str(ROOT),html=True),name='static')

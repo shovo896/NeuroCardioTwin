@@ -44,7 +44,19 @@ AUTH0_CLIENT_ID=<Auth0 SPA client ID>
 AUTH0_AUDIENCE=https://neurocardiotwin.vercel.app/mcp
 ```
 
-`/mcp` is fail-closed: it is unavailable until both Supabase and Auth0 configuration are present, and it requires a valid Auth0 RS256 access token with the `mcp:read` permission. The protected-resource metadata endpoint is `/.well-known/oauth-protected-resource/mcp`. No raw EEG, ECG, or uploaded signal values are persisted by these profile/audit helpers.
+The MCP services are fail-closed: they are unavailable until Auth0 is configured and require a valid Auth0 RS256 access token with the `mcp:read` permission. They use JSON-RPC over Streamable HTTP and expose separate least-privilege endpoints:
+
+```text
+POST /mcp/workspace  # get_my_profile, get_private_history, get_workspace_security
+POST /mcp/knowledge  # get_knowledge_catalog, search_approved_knowledge, get_rag_status
+POST /mcp/models     # get_model_status, get_model_capabilities, get_model_metrics
+```
+
+The protected-resource metadata endpoints are `/.well-known/oauth-protected-resource/mcp` and `/.well-known/oauth-protected-resource/mcp/{server}`. No raw EEG, ECG, or uploaded signal values are returned by any MCP tool. Verify all three services with a fresh user token (never commit or print it):
+
+```bash
+NCT_MCP_ACCESS_TOKEN='<access token>' .venv/bin/python scripts/check_mcp_servers.py --call-safe-tool
+```
 
 ### Public standard-user tier
 
