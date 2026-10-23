@@ -11,7 +11,7 @@ from pptx.dml.color import RGBColor
 from pptx.util import Inches, Pt
 
 
-OUT = Path(__file__).resolve().parents[1] / "NeuroCardioTwin_Competition_Presentation.pptx"
+OUT = Path(__file__).resolve().parents[1] / "NeuroCardioTwin_Full_Technical_Presentation.pptx"
 W, H = Inches(13.333), Inches(7.5)
 NAVY = RGBColor(7, 17, 34)
 PANEL = RGBColor(18, 39, 64)
@@ -186,7 +186,92 @@ def main():
     text(s, "Built in Bangladesh; designed for globally responsible digital-health research.", Inches(8.55), Inches(4.86), Inches(3.0), Inches(.48), 11, GREEN, True)
     footer(s, 10)
 
-    # 11 — Closing
+    # 11 — Model catalogue
+    s = make_slide(prs); title(s, "Model catalogue", "Three ONNX models, one connected workflow.", "Each model has an explicit input contract, output contract, and research-only safety boundary.")
+    models = [
+        ("EEG seizure-pattern detection", "Input", "512 normalized EEG samples", "Output", "Pattern flag, probability, threshold comparison", CYAN, "EEG"),
+        ("ECG arrhythmia classification", "Input", "180 normalized ECG samples", "Output", "Normal/abnormal label and confidence", TEAL, "ECG"),
+        ("Joint ECG–EEG forecasting", "Input", "256 ECG + 256 EEG samples", "Output", "64-step projected ECG and EEG sequences", VIOLET, "ECG+EEG"),
+    ]
+    for i, (name, in_label, input_text, out_label, output_text, color, tag) in enumerate(models):
+        x = Inches(.7 + i * 4.12)
+        shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(2.35), Inches(3.65), Inches(3.55), PANEL, True, RGBColor(47, 84, 118))
+        shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, x + Inches(.22), Inches(2.58), Inches(1.05), Inches(.32), color)
+        text(s, tag, x + Inches(.28), Inches(2.67), Inches(.94), Inches(.13), 8, NAVY, True, "Courier New", PP_ALIGN.CENTER)
+        text(s, name, x + Inches(.22), Inches(3.18), Inches(3.15), Inches(.48), 16, WHITE, True)
+        text(s, in_label.upper(), x + Inches(.22), Inches(4.00), Inches(.9), Inches(.18), 9, color, True, "Courier New")
+        text(s, input_text, x + Inches(.22), Inches(4.30), Inches(3.05), Inches(.36), 11, MUTED)
+        text(s, out_label.upper(), x + Inches(.22), Inches(4.88), Inches(.9), Inches(.18), 9, color, True, "Courier New")
+        text(s, output_text, x + Inches(.22), Inches(5.18), Inches(3.05), Inches(.45), 11, MUTED)
+    footer(s, 11)
+
+    # 12 — Signal processing
+    s = make_slide(prs); title(s, "Signal processing", "Validate first. Infer second.", "The system refuses missing, non-numeric, or insufficient user input instead of silently producing a model result.")
+    flow = [
+        ("1", "Acquire", "User uploads EEG/ECG CSV, or explicitly selects Demo or Sensor mode."),
+        ("2", "Validate", "Finite numeric values, required modality, sample count, sampling rate and model availability."),
+        ("3", "Resample", "Incoming time base is converted to the 128 Hz model time base."),
+        ("4", "Normalize", "Per-window standardization prepares a consistent input tensor."),
+        ("5", "Infer", "ONNX Runtime executes fixed-size tensors on the backend CPU."),
+    ]
+    for i, (n, head, body) in enumerate(flow):
+        x = Inches(.62 + i * 2.53)
+        shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, Inches(2.62), Inches(2.12), Inches(2.35), PANEL, True, RGBColor(47, 84, 118))
+        text(s, n, x + Inches(.20), Inches(2.88), Inches(.32), Inches(.22), 11, CYAN, True, "Courier New")
+        text(s, head, x + Inches(.20), Inches(3.36), Inches(1.62), Inches(.28), 15, WHITE, True)
+        text(s, body, x + Inches(.20), Inches(3.90), Inches(1.72), Inches(.72), 10.5, MUTED)
+        if i < len(flow) - 1: text(s, "→", x + Inches(2.18), Inches(3.57), Inches(.28), Inches(.25), 16, TEAL, True, align=PP_ALIGN.CENTER)
+    shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.15), Inches(5.48), Inches(11.05), Inches(.55), RGBColor(55, 29, 40), True, RGBColor(159, 62, 83))
+    text(s, "No upload + no explicit demo/sensor selection = no inference. The platform does not fabricate a result from absent signal data.", Inches(1.38), Inches(5.66), Inches(10.58), Inches(.17), 11, RGBColor(255, 212, 220), True, align=PP_ALIGN.CENTER)
+    footer(s, 12)
+
+    # 13 — RAG decision layer
+    s = make_slide(prs); title(s, "RAG decision layer", "Ground the explanation after local inference.", "The assistant enriches a model output with reviewed knowledge; it never replaces the local biomedical model.")
+    rag_steps = [
+        ("Local model result", "Analysis type, model label, confidence/probability, threshold and input-validation status.", CYAN),
+        ("Compact metadata", "Privacy-minimized decision context is formed; waveform values and account data are excluded.", TEAL),
+        ("Semantic retrieval", "Hugging Face embeddings query Pinecone using cosine similarity over approved documents.", VIOLET),
+        ("Grounded output", "The language layer uses retrieved evidence plus the ONNX result for research guidance and citations.", AMBER),
+    ]
+    for i, (head, body, color) in enumerate(rag_steps):
+        x = Inches(.72 + (i % 2) * 6.05); y = Inches(2.30 + (i // 2) * 1.78)
+        shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, x, y, Inches(5.45), Inches(1.40), PANEL, True, RGBColor(47, 84, 118))
+        shape(s, MSO_SHAPE.OVAL, x + Inches(.26), y + Inches(.38), Inches(.48), Inches(.48), color, False)
+        text(s, str(i + 1), x + Inches(.26), y + Inches(.49), Inches(.48), Inches(.15), 8, NAVY, True, "Courier New", PP_ALIGN.CENTER)
+        text(s, head, x + Inches(.98), y + Inches(.24), Inches(3.9), Inches(.23), 15, WHITE, True)
+        text(s, body, x + Inches(.98), y + Inches(.68), Inches(4.10), Inches(.43), 10.5, MUTED)
+    text(s, "Key distinction", Inches(.74), Inches(5.95), Inches(1.5), Inches(.2), 10, CYAN, True, "Courier New")
+    text(s, "Prediction is ONNX model inference. RAG explains and contextualizes the result using approved evidence.", Inches(.74), Inches(6.25), Inches(10.9), Inches(.3), 17, WHITE, True)
+    footer(s, 13)
+
+    # 14 — Demo storyboard
+    s = make_slide(prs); title(s, "Live demo storyboard", "Show the product in 90 seconds.", "This sequence maps directly to the deployed website screens and makes the architecture visible to judges.")
+    demo = [
+        ("0:00", "Secure sign in", "Auth0 login; authenticated user lands in a private profile."),
+        ("0:15", "Profile & privacy", "Show editable profile and server-filtered completed decision history."),
+        ("0:30", "Signal upload", "Upload EEG/ECG data, select the model, show validation controls."),
+        ("0:50", "Local result", "Show probability/confidence, threshold, validated samples and waveform."),
+        ("1:10", "AI research support", "Open the assistant; show grounded, multilingual response and safety boundary."),
+        ("1:25", "Emergency safety", "Show urgent-help action and Bangladesh 999 escalation path."),
+    ]
+    for i, (when, head, body) in enumerate(demo):
+        y = Inches(2.18 + i * .68)
+        shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(.75), y, Inches(1.00), Inches(.42), PANEL_2, True, CYAN)
+        text(s, when, Inches(.84), y + Inches(.13), Inches(.82), Inches(.12), 9, CYAN, True, "Courier New", PP_ALIGN.CENTER)
+        text(s, head, Inches(2.05), y + Inches(.02), Inches(2.6), Inches(.2), 13, WHITE, True)
+        text(s, body, Inches(4.52), y + Inches(.03), Inches(7.25), Inches(.25), 11.5, MUTED)
+    footer(s, 14)
+
+    # 15 — Limitations and roadmap
+    s = make_slide(prs); title(s, "Scientific boundary & roadmap", "A credible prototype says what it can—and cannot—do.", "We position NeuroCardioTwin as a deployable research workflow, not a clinical diagnostic device.")
+    card(s, "Current boundary", "Prototype models and controlled input contracts. Results require qualified review and are not treatment, diagnosis, or triage advice.", Inches(.72), Inches(2.35), Inches(3.72), Inches(2.45), RED, "!")
+    card(s, "Next validation", "Use de-identified datasets, patient/record-level splits, calibration, external evaluation, fairness analysis, and clinician feedback.", Inches(4.82), Inches(2.35), Inches(3.72), Inches(2.45), CYAN, "→")
+    card(s, "Deployment path", "Governed knowledge approval, audit exports, robust device integration, and prospective evaluation before any clinical claim.", Inches(8.92), Inches(2.35), Inches(3.72), Inches(2.45), GREEN, "✓")
+    shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(1.26), Inches(5.45), Inches(10.0), Inches(.63), RGBColor(14, 55, 65), True, RGBColor(37, 133, 139))
+    text(s, "Our competitive advantage is responsible execution: secure data boundaries, inspectable AI, and an honest validation roadmap.", Inches(1.5), Inches(5.68), Inches(9.5), Inches(.18), 11.5, GREEN, True, align=PP_ALIGN.CENTER)
+    footer(s, 15)
+
+    # 16 — Closing
     s = make_slide(prs)
     shape(s, MSO_SHAPE.OVAL, Inches(-1.3), Inches(3.9), Inches(4.1), Inches(4.1), RGBColor(14, 78, 94), False)
     text(s, "NEUROCARDIOTWIN", Inches(.7), Inches(1.15), Inches(6), Inches(.25), 11, CYAN, True, "Courier New")
@@ -195,7 +280,7 @@ def main():
     shape(s, MSO_SHAPE.ROUNDED_RECTANGLE, Inches(.72), Inches(4.75), Inches(3.45), Inches(.62), TEAL)
     text(s, "Thank you  •  Questions?", Inches(.98), Inches(4.96), Inches(2.95), Inches(.23), 13, NAVY, True, align=PP_ALIGN.CENTER)
     text(s, "Live demo: neurocardiotwin.vercel.app", Inches(.72), Inches(6.25), Inches(5.4), Inches(.25), 11, CYAN, True, "Courier New")
-    footer(s, 11)
+    footer(s, 16)
     prs.save(OUT)
     print(OUT)
 
