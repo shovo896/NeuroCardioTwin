@@ -300,6 +300,27 @@ def protected_resource_metadata(server_name: str | None = None):
         'resource_name':f"NeuroCardioTwin {server_name.title() if server_name else ''} MCP".strip()
     }
 
+
+@app.get('/mcp/status')
+def public_mcp_status():
+    """Publish non-sensitive MCP availability and discovery metadata."""
+    enabled = auth0_ready()
+    resource = mcp_resource()
+    origin = resource.rsplit('/mcp', 1)[0] if resource.endswith('/mcp') else resource
+    return {
+        'available': enabled,
+        'transport': 'JSON-RPC 2.0 over HTTPS POST',
+        'authorization': {'required': True, 'scheme': 'Bearer', 'required_scope': 'mcp:read'},
+        'services': [
+            {'name': 'workspace', 'endpoint': f'{origin}/mcp/workspace', 'tools': 3, 'private_storage_required': True},
+            {'name': 'knowledge', 'endpoint': f'{origin}/mcp/knowledge', 'tools': 3, 'private_storage_required': False},
+            {'name': 'models', 'endpoint': f'{origin}/mcp/models', 'tools': 3, 'private_storage_required': False},
+        ],
+        'protected_resource_metadata': f'{origin}/.well-known/oauth-protected-resource/mcp',
+        'raw_signal_access': 'not exposed through MCP',
+        'private_storage_configured': store.configured,
+    }
+
 def mcp_error(request_id,code,message):
     return {'jsonrpc':'2.0','id':request_id,'error':{'code':code,'message':message}}
 
