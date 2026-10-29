@@ -17,10 +17,23 @@
   };
   const showError = (message) => { error.textContent = message; error.classList.add('show'); };
   const clearError = () => { error.textContent = ''; error.classList.remove('show'); };
+  const showInboxState = (address, previouslySent = false) => {
+    form.hidden = true;
+    document.querySelector('.signup-header h1').textContent = 'Check your inbox.';
+    document.querySelector('.signup-header p:last-child').textContent = previouslySent
+      ? `A verification link was already sent to ${address}. Verify your email, then return and choose “Sign in with email & password”.`
+      : `We sent a verification link to ${address}. Verify your email, then return and choose “Sign in with email & password”.`;
+    document.querySelector('.signup-footer').innerHTML = '<a href="index.html?login=email">Return to email sign-in</a>';
+  };
   const messageTemplate = (message, values = []) => String(message || '').replace(/%d|%s/g, () => String(values.shift() ?? ''));
   const auth0Error = (result) => {
     if (result?.code === 'user_exists') return 'An account already exists for this email. Verify its inbox, then choose “Sign in with email & password”.';
     if (result?.code === 'connection_disabled') return 'Email/password sign-in is not enabled for this application yet. Ask the project owner to enable the Auth0 database connection.';
+    // Auth0 intentionally returns this generic response in some duplicate-signup
+    // situations to avoid revealing whether an address already has an account.
+    if (result?.code === 'invalid_signup' || /invalid sign up/i.test(String(result?.description || ''))) {
+      return 'This email could not be registered again. If you already created the account, verify the link in its inbox and then sign in with email and password.';
+    }
     if (result?.code === 'invalid_password') {
       const rules = Array.isArray(result?.description?.rules) ? result.description.rules.filter((rule) => !rule.verified).map((rule) => messageTemplate(rule.message, [...(rule.format || [])])) : [];
       return rules.length ? `Password does not meet the Auth0 security policy: ${rules.join('; ')}.` : 'Password does not meet the Auth0 security policy. Use at least 15 characters and avoid common passwords.';
@@ -70,11 +83,15 @@
       // Public connection name only; this makes the post-verification route
       // clear without placing any credential in browser storage.
       sessionStorage.setItem('nct.signup.connection', config.database_connection);
-      form.hidden = true;
-      document.querySelector('.signup-header h1').textContent = 'Check your inbox.';
-      document.querySelector('.signup-header p:last-child').textContent = `We sent a verification link to ${email.value.trim()}. Verify your email, then return and choose “Sign in with email & password”.`;
-      document.querySelector('.signup-footer').innerHTML = '<a href="index.html?login=email">Return to email sign-in</a>';
+      sessionStorage.setItem('nct.signup.email', email.value.trim().toLowerCase());
+      showInboxState(email.value.trim());
     } catch (reason) {
+      const attemptedEmail = email.value.trim().toLowerCase();
+      const priorEmail = sessionStorage.getItem('nct.signup.email');
+      if (/could not be registered again/i.test(String(reason?.message || '')) && priorEmail === attemptedEmail) {
+        showInboxState(email.value.trim(), true);
+        return;
+      }
       showError(reason.message || 'Account creation could not be completed.');
       submit.disabled = false; submit.removeAttribute('aria-busy'); submit.innerHTML = '<i class="fa-solid fa-user-plus"></i> Create secure account';
     }
