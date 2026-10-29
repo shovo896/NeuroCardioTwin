@@ -71,7 +71,10 @@
   async function signIn(method = 'default') {
     const oauth = await getConfig();
     const requestedEmailLogin = new URLSearchParams(window.location.search).get('login') === 'email';
-    if (method === 'default' && (requestedEmailLogin || sessionStorage.getItem('nct.signup.connection') === oauth.database_connection)) method = 'email';
+    // Only the explicit email return link opens the database connection.
+    // The primary gate action is Google, so the two visible choices never
+    // collapse into the same provider flow after a user signs up.
+    if (method === 'default' && requestedEmailLogin) method = 'email';
     if (method === 'email') sessionStorage.removeItem('nct.signup.connection');
     const verifier = random(); const state = random();
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
@@ -130,7 +133,7 @@
       }
     };
     const topButton = button(); if (topButton) topButton.addEventListener('click', () => authenticate(topButton));
-    const signInButton = gateButton(); if (signInButton) signInButton.addEventListener('click', () => authenticate(signInButton));
+    const signInButton = gateButton(); if (signInButton) signInButton.addEventListener('click', () => authenticate(signInButton, 'google'));
     const emailSignInButton = emailButton();
     if (emailSignInButton) emailSignInButton.addEventListener('click', () => authenticate(emailSignInButton, 'email'));
   }
