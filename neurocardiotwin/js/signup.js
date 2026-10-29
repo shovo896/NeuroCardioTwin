@@ -19,6 +19,8 @@
   const clearError = () => { error.textContent = ''; error.classList.remove('show'); };
   const messageTemplate = (message, values = []) => String(message || '').replace(/%d|%s/g, () => String(values.shift() ?? ''));
   const auth0Error = (result) => {
+    if (result?.code === 'user_exists') return 'An account already exists for this email. Verify its inbox, then choose “Sign in with email & password”.';
+    if (result?.code === 'connection_disabled') return 'Email/password sign-in is not enabled for this application yet. Ask the project owner to enable the Auth0 database connection.';
     if (result?.code === 'invalid_password') {
       const rules = Array.isArray(result?.description?.rules) ? result.description.rules.filter((rule) => !rule.verified).map((rule) => messageTemplate(rule.message, [...(rule.format || [])])) : [];
       return rules.length ? `Password does not meet the Auth0 security policy: ${rules.join('; ')}.` : 'Password does not meet the Auth0 security policy. Use at least 15 characters and avoid common passwords.';
@@ -65,10 +67,13 @@
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(auth0Error(result));
+      // Public connection name only; this makes the post-verification route
+      // clear without placing any credential in browser storage.
+      sessionStorage.setItem('nct.signup.connection', config.database_connection);
       form.hidden = true;
       document.querySelector('.signup-header h1').textContent = 'Check your inbox.';
-      document.querySelector('.signup-header p:last-child').textContent = `We sent a verification link to ${email.value.trim()}. Verify your email, then return here to sign in.`;
-      document.querySelector('.signup-footer').innerHTML = '<a href="index.html">Return to secure sign-in</a>';
+      document.querySelector('.signup-header p:last-child').textContent = `We sent a verification link to ${email.value.trim()}. Verify your email, then return and choose “Sign in with email & password”.`;
+      document.querySelector('.signup-footer').innerHTML = '<a href="index.html?login=email">Return to email sign-in</a>';
     } catch (reason) {
       showError(reason.message || 'Account creation could not be completed.');
       submit.disabled = false; submit.removeAttribute('aria-busy'); submit.innerHTML = '<i class="fa-solid fa-user-plus"></i> Create secure account';

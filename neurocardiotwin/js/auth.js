@@ -11,6 +11,7 @@
 
   const button = () => document.getElementById('auth-button');
   const gateButton = () => document.getElementById('auth-gate-button');
+  const emailButton = () => document.getElementById('auth-email-button');
   const gateMessage = () => document.getElementById('auth-gate-message');
   const tokens = () => {
     try { return JSON.parse(sessionStorage.getItem(TOKEN_KEY) || 'null'); }
@@ -66,8 +67,11 @@
     }
     throw new Error('Unable to verify the signed-in session.');
   }
-  async function signIn() {
+  async function signIn(method = 'default') {
     const oauth = await getConfig();
+    const requestedEmailLogin = new URLSearchParams(window.location.search).get('login') === 'email';
+    if (method === 'default' && (requestedEmailLogin || sessionStorage.getItem('nct.signup.connection') === oauth.database_connection)) method = 'email';
+    if (method === 'email') sessionStorage.removeItem('nct.signup.connection');
     const verifier = random(); const state = random();
     const digest = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(verifier));
     sessionStorage.setItem(VERIFIER_KEY, verifier); sessionStorage.setItem(STATE_KEY, state);
@@ -76,6 +80,10 @@
       scope: 'openid profile email mcp:read', audience: oauth.audience,
       code_challenge: encode(digest), code_challenge_method: 'S256', state
     });
+    // The Auth0 database connection must be selected explicitly for the
+    // email/password account that signup.html creates.
+    if (method === 'email') query.set('connection', oauth.database_connection);
+    if (method === 'google') query.set('connection', oauth.google_connection);
     window.location.assign(`https://${oauth.domain}/authorize?${query}`);
   }
   async function finishCallback() {
@@ -112,16 +120,18 @@
       if (me) { unlock(me); announce(`Signed in${me.display_name ? ` as ${me.display_name}` : ''}.`); }
       else lock('Sign in with your verified account to access the workspace.');
     } catch (error) { render(null); lock(error.message || 'Sign-in failed.'); }
-    const authenticate = async (el) => {
+    const authenticate = async (el, method = 'default') => {
       try {
         el.disabled = true;
-        if (el.dataset.signedIn) await signOut(); else await signIn();
+        if (el.dataset.signedIn) await signOut(); else await signIn(method);
       } catch (error) {
         lock(error.message || 'Sign-in failed.'); announce(error.message || 'Sign-in failed.', true); el.disabled = false;
       }
     };
     const topButton = button(); if (topButton) topButton.addEventListener('click', () => authenticate(topButton));
     const signInButton = gateButton(); if (signInButton) signInButton.addEventListener('click', () => authenticate(signInButton));
+    const emailSignInButton = emailButton();
+    if (emailSignInButton) emailSignInButton.addEventListener('click', () => authenticate(emailSignInButton, 'email'));
   }
   // auth.js is loaded after the gate markup, so boot immediately. This also
   // avoids a stale/bfcache document missing the DOMContentLoaded event.
