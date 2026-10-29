@@ -33,6 +33,7 @@
     document.body.classList.add('auth-locked');
     const messageEl = gateMessage(); if (messageEl) messageEl.textContent = message;
     const gate = gateButton(); if (gate) gate.disabled = false;
+    const email = emailButton(); if (email) email.disabled = false;
   };
   const unlock = (me) => {
     document.body.classList.remove('auth-pending', 'auth-locked');
