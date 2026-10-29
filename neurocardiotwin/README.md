@@ -190,6 +190,17 @@ The API accepts this only after Auth0 JWT signature, issuer, audience, and
 expiry validation. Only verified-email users receive standard MCP access; admin
 permissions remain role-only.
 
+### Verification-email delivery
+
+The Auth0 database connection uses the deployed **Send NeuroCardioTwin
+verification email** Post User Registration Action.  Its reviewed source is
+[`auth0/actions/send-verification-on-registration.js`](auth0/actions/send-verification-on-registration.js).
+For a new, unverified database user of the NeuroCardioTwin web client, it
+obtains a short-lived Management API token from its Auth0 Action secrets and
+creates one verification-email job.  The helper machine client has only the
+`update:users` Management API scope; its client secret is stored only in Auth0
+Action secrets, never in this repository, the browser, or Vercel.
+
 ## Private RAG decision support
 
 The optional decision-support API combines an approved local knowledge base,
