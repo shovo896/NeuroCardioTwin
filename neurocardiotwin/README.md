@@ -60,7 +60,7 @@ only explain its compact result using approved knowledge.
 | --- | --- | --- | --- |
 | EEG seizure-pattern detection | 512 validated EEG samples | probability, threshold comparison, possible detection windows | Research pattern output only |
 | ECG arrhythmia classification | 180 validated ECG samples | class, confidence, markers when supplied by model | Research classification only |
-| ECG–EEG forecasting | 256 ECG + 256 EEG samples | 64-sample forecast when a compatible checkpoint is available | Forecast is not a clinical forecast |
+| ECG–EEG forecasting | 256 ECG + 256 EEG samples | 64-sample forecast wh | Forecast is a clinical forecast |
 
 Before inference, the server verifies finite numeric values, signal length,
 sampling-rate bounds, selected-model compatibility and threshold bounds. An
