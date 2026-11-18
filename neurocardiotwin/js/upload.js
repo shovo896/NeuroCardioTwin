@@ -1,5 +1,5 @@
 window.Upload=(()=>{
-  const allowed={ecg:['csv','dat','hea'],eeg:['csv','edf']};
+  const allowed={ecg:['csv'],eeg:['csv']};
   const samples={seizure:512,arrhythmia:180,forecast:256};
   let sensor=false;
   const $=id=>document.getElementById(id);
@@ -25,7 +25,21 @@ window.Upload=(()=>{
   const threshold=()=>Number($('detection-threshold').value)||.5;
   function payload(values,source){return {signal_values:values,session_id:$('upload-session').value||source,sampling_rate:rate(),threshold:threshold()}}
   function forecastPayload(source,ecg,eeg){return {session_id:$('upload-session').value||source,sampling_rate:rate(),ecg_values:ecg,eeg_values:eeg}}
-  async function csvValues(file,n,label){if(!file||!file.name.toLowerCase().endsWith('.csv'))throw Error(`${label} forecasting input must be a one-column CSV file.`);const tokens=(await file.text()).trim().split(/[\s,;]+/).filter(Boolean),values=tokens.map(Number);if(!values.length||values.some(v=>!Number.isFinite(v)))throw Error(`${label} CSV must contain numeric samples only.`);if(values.length<n)throw Error(`${label} CSV needs at least ${n} samples.`);return values}
+  async function csvValues(file,n,label){
+    if(!file||!file.name.toLowerCase().endsWith('.csv'))throw Error(`${label} input must be a CSV file.`);
+    if(file.size>25*1024*1024)throw Error(`${label} CSV is larger than 25 MB. Export a shorter signal window and try again.`);
+    const text=(await file.text()).replace(/^\uFEFF/,'').trim();
+    if(!text)throw Error(`${label} CSV is empty.`);
+    const lines=text.split(/\r?\n/).map(line=>line.trim()).filter(Boolean);
+    const firstTokens=lines[0].split(/[\s,;]+/).filter(Boolean);
+    if(firstTokens.some(token=>!Number.isFinite(Number(token))))lines.shift();
+    const tokens=lines.join('\n').split(/[\s,;]+/).filter(Boolean),values=tokens.map(Number);
+    if(!values.length||values.some(value=>!Number.isFinite(value)))throw Error(`${label} CSV must contain one numeric signal column (an optional header is allowed).`);
+    if(values.length<n)throw Error(`${label} CSV needs at least ${n} samples; received ${values.length}.`);
+    // Send only the fixed model window. This avoids Vercel request-size failures
+    // for long recordings while preserving the exact samples used by inference.
+    return values.slice(0,n);
+  }
   async function runForecast(inputMode){
     if(inputMode==='parameters')throw Error('Forecasting requires paired ECG and EEG inputs. Use Baseline, Sensor input, or upload two CSV files.');
     if(inputMode==='upload'){const ecg=await csvValues($('ecg-file').files[0],256,'ECG'),eeg=await csvValues($('eeg-file').files[0],256,'EEG');return API.analyzeParameters('forecast',forecastPayload('uploaded-forecast',ecg,eeg))}
@@ -75,7 +89,12 @@ window.Upload=(()=>{
       item.setAttribute('aria-checked',String(active));
     });
     mode('upload');
-    ['ecg','eeg'].forEach(type=>$(type+'-file').addEventListener('change',event=>{const files=event.target.files,ok=[...files].every(file=>allowed[type].includes(file.name.split('.').pop().toLowerCase()));$(type+'-file-name').textContent=files.length?[...files].map(file=>file.name).join(', '):'No file selected';if(!ok)msg('Unsupported file format.')}));
+    ['ecg','eeg'].forEach(type=>{
+      const input=$(type+'-file'),zone=input.closest('.drop-zone');
+      input.accept='.csv,text/csv';input.multiple=false;
+      const format=zone?.querySelector('span');if(format)format.textContent='Click to select a numeric CSV';
+      input.addEventListener('change',event=>{const files=event.target.files,ok=[...files].every(file=>allowed[type].includes(file.name.split('.').pop().toLowerCase()));$(type+'-file-name').textContent=files.length?[...files].map(file=>file.name).join(', '):'No file selected';zone?.classList.toggle('has-file',Boolean(files.length&&ok));if(!ok){event.target.value='';zone?.classList.remove('has-file');msg('Only CSV signal files are supported.')}else if(files.length)msg(`${files[0].name} is ready for analysis.`,true)});
+    });
     $('analysis-mode').onchange=req;
     $('sensor-start').onclick=()=>{sensor=true;$('sensor-status').className='tag';$('sensor-status').innerHTML='<i class="fa-solid fa-circle"></i> Stream active';$('sensor-start').innerHTML='<i class="fa-solid fa-rotate"></i> Restart stream';if(!$('upload-session').value)$('upload-session').value='sensor-input-'+Date.now().toString().slice(-6);if(!$('sample-rate').value)$('sample-rate').value='128';msg('Sensor input is active. Analyse the waveform now.',true)};
     document.querySelectorAll('.mode-option').forEach(button=>button.onclick=()=>{document.querySelectorAll('.mode-option').forEach(item=>{item.classList.remove('active');item.setAttribute('aria-checked','false')});button.classList.add('active');button.setAttribute('aria-checked','true');mode(button.dataset.inputMode);msg(button.dataset.inputMode==='sensor'?'Start the sensor stream, then run detection.':button.dataset.inputMode==='parameters'?'Paste waveform samples, then run detection.':button.dataset.inputMode==='demo'?'Validated EEG/ECG input is ready. Choose a model and run it.':'',true)});
@@ -84,7 +103,7 @@ window.Upload=(()=>{
       $('upload-progress').classList.remove('hidden');complete.disabled=true;single.disabled=true;
       try{await runCompleteAnalysis(inputMode)}catch(error){msg('Complete analysis was not completed: '+error.message)}finally{$('upload-progress').classList.add('hidden');complete.disabled=inputMode==='parameters';single.disabled=false}
     };
-    $('upload-form').onsubmit=async event=>{event.preventDefault();const inputMode=document.querySelector('.mode-option.active').dataset.inputMode,kind=selected();$('upload-progress').classList.remove('hidden');try{let result;if(kind==='forecast')result=await runForecast(inputMode);else if(inputMode==='parameters')result=await API.analyzeParameters(kind,payload(manual(),'manual-input'));else if(inputMode==='sensor'){if(!sensor)throw Error('Start the sensor stream first');result=await API.analyzeParameters(kind,payload(inputStream(kind==='seizure'?'eeg':'ecg',samples[kind]),'sensor-input'))}else if(inputMode==='demo')result=await API.analyzeParameters(kind,payload(inputStream(kind==='seizure'?'eeg':'ecg',samples[kind]),'baseline-input'));else{const file=kind==='seizure'?$('eeg-file').files[0]:$('ecg-file').files[0];if(!file)throw Error('Select the required signal file');const form=new FormData();form.append(kind==='seizure'?'eeg_file':'ecg_file',file);form.append('session_id',$('upload-session').value);form.append('threshold',threshold());form.append('sampling_rate',rate());result=await API.analyze(kind,form)}window.App.handleAnalysis(kind,result);msg(`Model result received. ${rate()} Hz source input was converted to the model's 128 Hz time base.`,true)}catch(error){msg('Detection was not completed: '+error.message)}finally{$('upload-progress').classList.add('hidden')}};
+    $('upload-form').onsubmit=async event=>{event.preventDefault();const inputMode=document.querySelector('.mode-option.active').dataset.inputMode,kind=selected();$('upload-progress').classList.remove('hidden');try{let result;if(kind==='forecast')result=await runForecast(inputMode);else if(inputMode==='parameters')result=await API.analyzeParameters(kind,payload(manual(),'manual-input'));else if(inputMode==='sensor'){if(!sensor)throw Error('Start the sensor stream first');result=await API.analyzeParameters(kind,payload(inputStream(kind==='seizure'?'eeg':'ecg',samples[kind]),'sensor-input'))}else if(inputMode==='demo')result=await API.analyzeParameters(kind,payload(inputStream(kind==='seizure'?'eeg':'ecg',samples[kind]),'baseline-input'));else{const isSeizure=kind==='seizure',file=$(isSeizure?'eeg-file':'ecg-file').files[0],label=isSeizure?'EEG':'ECG';if(!file)throw Error(`Select the ${label} CSV file`);const values=await csvValues(file,samples[kind],label);result=await API.analyzeParameters(kind,payload(values,`uploaded-${kind}`))}window.App.handleAnalysis(kind,result);msg(`Model result received. ${rate()} Hz source input was converted to the model's 128 Hz time base.`,true)}catch(error){msg('Detection was not completed: '+error.message)}finally{$('upload-progress').classList.add('hidden')}};
     req();refreshForecastCapability();
   }
   return {init};
